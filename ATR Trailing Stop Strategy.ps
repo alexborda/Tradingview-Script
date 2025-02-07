@@ -73,60 +73,74 @@ var float short_take_profit = na
 // *** Cálculo del Trailing Stop, Take Profit y Break-Even ***
 if strategy.position_size > 0
     price_entry := strategy.position_avg_price
-    long_stop_price := math.max(atr_lower, nz(long_stop_price[1], price_entry) + atr_value * trailing_mult)
+    long_stop_price := nz(long_stop_price[1], atr_lower) + atr_value * trailing_mult
+    long_stop_price := math.max(long_stop_price, atr_lower)
     long_take_profit := price_entry + atr_value * take_profit_mult
-    if close > price_entry + atr_value * break_even_mult
+
+    if not long_break_even and close > price_entry + atr_value * break_even_mult
         long_break_even := true
-        long_stop_price := price_entry  
+        long_stop_price := price_entry // Ajusta el stop al punto de entrada
 
 if strategy.position_size < 0
     price_entry := strategy.position_avg_price
-    short_stop_price := math.min(atr_upper, nz(short_stop_price[1], price_entry) - atr_value * trailing_mult)
+    short_stop_price := nz(short_stop_price[1], atr_upper) - atr_value * trailing_mult
+    short_stop_price := math.min(short_stop_price, atr_upper)
     short_take_profit := price_entry - atr_value * take_profit_mult
-    if close < price_entry - atr_value * break_even_mult
+
+    if not short_break_even and close < price_entry - atr_value * break_even_mult
         short_break_even := true
-        short_stop_price := price_entry  
+        short_stop_price := price_entry // Ajusta el stop al punto de entrada
+
 
 // *** Condiciones de Entrada ***
-entry_long = can_trade and close > atr_lower and rsi > 45 and adx > adx_threshold and vol_confirmed and trend_filter
-entry_short = can_trade and close < atr_upper and rsi < 55 and adx > adx_threshold and vol_confirmed and not trend_filter
+entry_long = can_trade and close > atr_lower and rsi > 45 and adx > adx_threshold and vol_confirmed
+entry_short = can_trade and close < atr_upper and rsi < 55 and adx > adx_threshold and vol_confirmed
 
-// *** Envío de Webhooks Optimizado ***
+// *** Webhook Optimizado ***
 webhook_url = "https://trading-bot-kv25.onrender.com/webhook"
 api_secret = "supersecreto123"
 
-// *** Webhook para Notificar Órdenes ***
-sendWebhook(signal, price, stop_loss, take_profit, order_type, hedging, quantity) =>
-    payload = "{\"secret\": \"" + api_secret + "\", \"symbol\": \"" + syminfo.ticker + "\", \"side\": \"" + signal + "\", \"order_type\": \"" + order_type + "\",  \"qty\": \"" + str.tostring(quantity) + "\", \"stop_loss\": \"" + str.tostring(stop_loss) + "\", \"take_profit\": \"" + str.tostring(take_profit) + "\", \"trailing_stop\": \"" + str.tostring(atr_value * trailing_mult) + "\", \"break_even\": \"" + str.tostring(stop_loss) + "\", \"hedging\": \"" + str.tostring(hedging) + "\"}"
-    alert(payload, alert.freq_once_per_bar_close)
+sendWebhook(order_type, symbol, qty, price, stop_loss, take_profit, trailing_stop) =>
+    payload = "{\"secret\": \"" + api_secret + 
+              "\", \"order_type\": \"" + order_type + 
+              "\", \"symbol\": \"" + symbol + 
+              "\", \"qty\": \"" + str.tostring(qty) + 
+              "\", \"price\": " + (na(price) ? "null" : str.tostring(price)) + 
+              ", \"stop_loss\": " + (na(stop_loss) ? "null" : str.tostring(stop_loss)) + 
+              ", \"take_profit\": " + (na(take_profit) ? "null" : str.tostring(take_profit)) + 
+              ", \"trailing_stop\": " + (na(trailing_stop) ? "null" : str.tostring(trailing_stop)) + "}"
+    
+    if strategy.position_size != 0
+        alert(payload, alert.freq_once_per_bar_close)
 
 // *** Lógica de Entrada ***
 if entry_long and strategy.position_size == 0
     strategy.entry("Long", strategy.long, qty=final_qty)
-    sendWebhook("buy", close, long_stop_price, long_take_profit, order_type_input, true, final_qty)
+    sendWebhook("buy", syminfo.ticker, final_qty, 0.0, long_stop_price, long_take_profit, atr_value * trailing_mult)
 
 if entry_short and strategy.position_size == 0
     strategy.entry("Short", strategy.short, qty=final_qty)
-    sendWebhook("sell", close, short_stop_price, short_take_profit, order_type_input, true, final_qty)
+    sendWebhook("sell", syminfo.ticker, final_qty, 0.0, short_stop_price, short_take_profit, atr_value * trailing_mult)
 
 // *** Salidas con Break-Even ***
 if long_break_even
     strategy.exit("Exit Long BE", from_entry="Long", stop=long_stop_price)
-    sendWebhook("BREAK_EVEN_LONG", close, long_stop_price, long_take_profit, "market", true, final_qty)
+    sendWebhook("buy", syminfo.ticker, final_qty, 0.0, long_stop_price, long_take_profit, atr_value * trailing_mult)
     long_break_even := false
 
 if short_break_even
     strategy.exit("Exit Short BE", from_entry="Short", stop=short_stop_price)
-    sendWebhook("BREAK_EVEN_SHORT", close, short_stop_price, short_take_profit, "market", true, final_qty)
+    sendWebhook("sell", syminfo.ticker, final_qty, 0.0, short_stop_price, short_take_profit, atr_value * trailing_mult)
     short_break_even := false
 
 // *** Salidas de Órdenes (Stop Loss y Take Profit) ***
 if strategy.position_size > 0
     strategy.exit("Exit Long", from_entry="Long", stop=long_stop_price, limit=long_take_profit)
-    sendWebhook("CLOSE_LONG", close, long_stop_price, long_take_profit, order_type_input, true, final_qty)
+    sendWebhook("buy", syminfo.ticker, final_qty, 0.0, long_stop_price, long_take_profit, atr_value * trailing_mult)
+
 if strategy.position_size < 0
     strategy.exit("Exit Short", from_entry="Short", stop=short_stop_price, limit=short_take_profit)
-    sendWebhook("CLOSE_SHORT", close, short_stop_price, short_take_profit, order_type_input, true, final_qty)
-
+    sendWebhook("sell", syminfo.ticker, final_qty, 0.0, short_stop_price, short_take_profit, atr_value * trailing_mult)
+    
 // *** Indicadores Visuales ***
-plotshape(series=trade_in_high_volume_hours, title="Alta Liquidez", location=location.bottom, color=color.blue, style=shape.triangleup, size=size.small)
+plotshape(series=trade_in_high_volume_hours, title="Alta Liquidez", location=location.bottom, color=color.blue, style=shape.triangleup, size=size.auto)
