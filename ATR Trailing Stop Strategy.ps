@@ -97,50 +97,50 @@ entry_long = can_trade and close > atr_lower and rsi > 45 and adx > adx_threshol
 entry_short = can_trade and close < atr_upper and rsi < 55 and adx > adx_threshold and vol_confirmed
 
 // *** Webhook Optimizado ***
-webhook_url = "https://trading-bot-kv25.onrender.com/webhook"
+webhook_url = "https://trading-bot-kv25.onrender.com/trade"
 api_secret = "supersecreto123"
 
-sendWebhook(order_type, symbol, qty, price, stop_loss, take_profit, trailing_stop) =>
-    payload = "{\"secret\": \"" + api_secret + 
-              "\", \"order_type\": \"" + order_type + 
-              "\", \"symbol\": \"" + symbol + 
-              "\", \"qty\": \"" + str.tostring(qty) + 
-              "\", \"price\": " + (na(price) ? "null" : str.tostring(price)) + 
-              ", \"stop_loss\": " + (na(stop_loss) ? "null" : str.tostring(stop_loss)) + 
-              ", \"take_profit\": " + (na(take_profit) ? "null" : str.tostring(take_profit)) + 
-              ", \"trailing_stop\": " + (na(trailing_stop) ? "null" : str.tostring(trailing_stop)) + "}"
-    
+sendTrade(order_type, symbol, qty, price, stop_loss, take_profit, trailing_stop) =>
+    if strategy.position_size == 0 or strategy.opentrades == 1
+        payload = "{\"secret\": \"" + api_secret + 
+                  "\", \"order_type\": \"" + order_type + 
+                  "\", \"symbol\": \"" + symbol + 
+                  "\", \"qty\": \"" + str.tostring(qty) + 
+                  "\", \"price\": " + (na(price) ? "null" : str.tostring(price)) + 
+                  ", \"stop_loss\": " + (na(stop_loss) ? "null" : str.tostring(stop_loss)) + 
+                  ", \"take_profit\": " + (na(take_profit) ? "null" : str.tostring(take_profit)) + 
+                  ", \"trailing_stop\": " + (na(trailing_stop) ? "null" : str.tostring(trailing_stop)) + "}"    
     if strategy.position_size != 0
-        alert(payload, alert.freq_once_per_bar_close)
+        alert(payload, alert.freq_all)
 
 // *** Lógica de Entrada ***
 if entry_long and strategy.position_size == 0
     strategy.entry("Long", strategy.long, qty=final_qty)
-    sendWebhook("buy", syminfo.ticker, final_qty, 0.0, long_stop_price, long_take_profit, atr_value * trailing_mult)
+    sendTrade("buy", syminfo.ticker, final_qty, 0.0, long_stop_price, long_take_profit, atr_value * trailing_mult)
 
 if entry_short and strategy.position_size == 0
     strategy.entry("Short", strategy.short, qty=final_qty)
-    sendWebhook("sell", syminfo.ticker, final_qty, 0.0, short_stop_price, short_take_profit, atr_value * trailing_mult)
+    sendTrade("sell", syminfo.ticker, final_qty, 0.0, short_stop_price, short_take_profit, atr_value * trailing_mult)
 
 // *** Salidas con Break-Even ***
 if long_break_even
     strategy.exit("Exit Long BE", from_entry="Long", stop=long_stop_price)
-    sendWebhook("buy", syminfo.ticker, final_qty, 0.0, long_stop_price, long_take_profit, atr_value * trailing_mult)
+    sendTrade("buy", syminfo.ticker, final_qty, 0.0, long_stop_price, long_take_profit, atr_value * trailing_mult)
     long_break_even := false
 
 if short_break_even
     strategy.exit("Exit Short BE", from_entry="Short", stop=short_stop_price)
-    sendWebhook("sell", syminfo.ticker, final_qty, 0.0, short_stop_price, short_take_profit, atr_value * trailing_mult)
+    sendTrade("sell", syminfo.ticker, final_qty, 0.0, short_stop_price, short_take_profit, atr_value * trailing_mult)
     short_break_even := false
 
 // *** Salidas de Órdenes (Stop Loss y Take Profit) ***
 if strategy.position_size > 0
     strategy.exit("Exit Long", from_entry="Long", stop=long_stop_price, limit=long_take_profit)
-    sendWebhook("buy", syminfo.ticker, final_qty, 0.0, long_stop_price, long_take_profit, atr_value * trailing_mult)
+    sendTrade("buy", syminfo.ticker, final_qty, 0.0, long_stop_price, long_take_profit, atr_value * trailing_mult)
 
 if strategy.position_size < 0
     strategy.exit("Exit Short", from_entry="Short", stop=short_stop_price, limit=short_take_profit)
-    sendWebhook("sell", syminfo.ticker, final_qty, 0.0, short_stop_price, short_take_profit, atr_value * trailing_mult)
+    sendTrade("sell", syminfo.ticker, final_qty, 0.0, short_stop_price, short_take_profit, atr_value * trailing_mult)
     
 // *** Indicadores Visuales ***
 plotshape(series=trade_in_high_volume_hours, title="Alta Liquidez", location=location.bottom, color=color.blue, style=shape.triangleup, size=size.auto)
