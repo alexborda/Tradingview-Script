@@ -1,15 +1,11 @@
-//@version=6 
+//@version=6
 strategy('ATR Trailing Stop', overlay=true)
 
-// *** Cálculo del ATR ***
-atr_length = input(14, title='Longitud del ATR')
-atr_mult = input(1.2, title='ATR Multiplicador')
-atr_value = ta.atr(atr_length)
-atr_upper = close + atr_value * atr_mult
-atr_lower = close - atr_value * atr_mult
-atr_filter_long = close > atr_lower
-atr_filter_short = close < atr_upper
-volatility_factor = atr_value / close
+// *** Cálculo del RSI ***
+rsi_length = input(14, title='Longitud del RSI')
+rsi = ta.rsi(close, rsi_length)
+rsi_filter_long = rsi > 40
+rsi_filter_short = rsi < 60
 
 // *** Cálculo del MACD ***
 [macd_line, signal_line, _] = ta.macd(close, 12, 26, 9)
@@ -21,17 +17,26 @@ macd_trend_down = macd_slope < 0
 
 // *** Cálculo del ADX Dinámico ***
 adx_length = input(14, title='Longitud del ADX')
-adx_threshold_base = input(25, title="Umbral Base de ADX")
+adx_threshold = input(25, title="Umbral de ADX Medio")
 adx_smoothing = input(14, title="Suavizado ADX")
 [diplus, diminus, adx] = ta.dmi(adx_length, adx_smoothing)
-adx_threshold = adx_threshold_base * (1 + volatility_factor)  // ADX dinámico dependiendo de la volatilidad
 
 // *** Cálculo del Volumen Relativo ***
 vol_length = input(24, title="Longitud del Volumen")
-vol_threshold = input(1.1, title="Factor de Volumen Mínimo")
+vol_threshold = input(1.2, title="Factor de Volumen Mínimo")
 vol_avg = ta.ema(volume, vol_length)  // Media del volumen
 vol_relative = volume / vol_avg  // Relación volumen actual/promedio
 vol_filter = vol_relative > vol_threshold  // Confirmación de volumen
+
+// *** Cálculo del ATR ***
+atr_length = input(14, title='Longitud del ATR')
+atr_mult = input(1.2, title='ATR Multiplicador')
+atr_value = ta.atr(atr_length)
+atr_upper = close + atr_value * atr_mult
+atr_lower = close - atr_value * atr_mult
+atr_filter_long = close > atr_lower
+atr_filter_short = close < atr_upper
+volatility_factor = atr_value / close
 
 // *** Gestión de Riesgo ***
 margin_percent = input(5, title="Porcentaje de Margen para Operar") / 100  // Ajuste del margen
@@ -50,8 +55,8 @@ capital = strategy.equity * risk_percent
 final_qty = math.min(math.max(capital / close, min_qty), max_qty)
 
 // *** Condiciones de Entrada ***
-entry_long = macd_trend_up and atr_filter_long and vol_filter and adx > adx_threshold
-entry_short = macd_trend_down and atr_filter_short and vol_filter and adx > adx_threshold
+entry_long = macd_filter_long and macd_trend_up and atr_filter_long and vol_filter and adx > adx_threshold
+entry_short = macd_filter_short and macd_trend_down and atr_filter_short and vol_filter and adx > adx_threshold
 
 // *** Control de Posiciones y Capital Disponible ***
 can_trade = strategy.position_size == 0 and strategy.equity >= min_qty  // No hay posición activa y hay saldo suficiente
@@ -65,6 +70,28 @@ if can_trade
     if entry_short
         label.new(bar_index, high, "ENTRADA SHORT", color=color.red, textcolor=color.white, size=size.auto)
         strategy.entry("Short", strategy.short, qty=final_qty)
+
+// *** Función mejorada para manejar salidas parciales con Stop-Loss dinámico ***
+exitTrade(entry_id, stop_price, take_profit_price, volatility_factor, is_long, adx_strength) =>
+    // Ajuste de Stop según Volatilidad
+    stop_conservador = stop_price * (1 - volatility_factor) if is_long else stop_price * (1 + volatility_factor)
+    stop_agresivo = stop_price * (1 - volatility_factor * 1.5) if is_long else stop_price * (1 + volatility_factor * 1.5)
+
+    // Definir el Stop-Loss según la tendencia del mercado
+    stop_adj = stop_conservador
+    if adx_strength > adx_threshold  // Si ADX es alto, usamos Stop más agresivo
+        stop_adj := stop_agresivo
+
+    // Definir los Take-Profit
+    tp_half = take_profit_price * 0.5  // Primer objetivo
+    tp_full = take_profit_price  // Objetivo final
+
+    // Salida Parcial: 50% de la posición
+    strategy.exit(entry_id + "_50", from_entry=entry_id, qty_percent=50, stop=stop_adj, limit=tp_half)
+
+    // Salida Total: 50% restante
+    strategy.exit(entry_id + "_100", from_entry=entry_id, qty_percent=50, stop=stop_adj, limit=tp_full)
+
 
 // *** Cálculo del Trailing Stop, Take Profit y Break-Even ***
 var bool long_break_even = false
@@ -87,9 +114,10 @@ float dynamic_trailing_mult = trailing_mult * (1 + volatility_factor)
 
 if strategy.position_size > 0
     price_entry := strategy.position_avg_price
+    long_stop_price := ta.lowest(low, 5)  
     long_take_profit := price_entry + atr_value * tp_factor * (1 + volatility_factor)
 
-    if not long_break_even and close > price_entry + atr_value * break_even_mult
+    if not long_break_even and close > price_entry + atr_value * break_even_mult and adx > adx_threshold
         long_break_even := true
         long_stop_price := price_entry
         long_trailing_active := true  
@@ -99,9 +127,10 @@ if strategy.position_size > 0
 
 if strategy.position_size < 0
     price_entry := strategy.position_avg_price
+    short_stop_price := ta.highest(high, 5)  // Usa el máximo de los últimos 5 períodos
     short_take_profit := price_entry - atr_value * tp_factor * (1 + volatility_factor)
 
-    // Activa el Break-Even
+    //Activa el Break-Even
     if not short_break_even and close < price_entry - atr_value * break_even_mult
         short_break_even := true
         short_stop_price := price_entry  // Ajusta el stop al punto de entrada
@@ -113,14 +142,14 @@ if strategy.position_size < 0
 
 // *** Salidas con Break-Even ***
 if long_break_even and strategy.position_size > 0
-    strategy.exit("Exit Long BE", from_entry="Long", stop=long_stop_price, limit=long_take_profit)
+    exitTrade("Exit Long BE", long_stop_price, long_take_profit, volatility_factor, true)
 
 if short_break_even and strategy.position_size < 0
-    strategy.exit("Exit Short BE", from_entry="Short", stop=short_stop_price, limit=short_take_profit)
+    exitTrade("Exit Short BE", short_stop_price, short_take_profit, volatility_factor, false)
 
 // *** Salidas de Órdenes con Trailing Stop ***
 if strategy.position_size > 0
-    strategy.exit("Exit Long", from_entry="Long", stop=long_stop_price, limit=long_take_profit)
+    exitTrade("Exit Long", long_stop_price, long_take_profit, volatility_factor, true)
 
 if strategy.position_size < 0
-    strategy.exit("Exit Short", from_entry="Short", stop=short_stop_price, limit=short_take_profit)
+    exitTrade("Exit Short", short_stop_price, short_take_profit, volatility_factor, false)
