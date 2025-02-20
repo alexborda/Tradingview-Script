@@ -60,7 +60,6 @@ var float short_stop_price = na
 var float long_take_profit = na
 var float short_take_profit = na
 var float price_entry = nz(strategy.position_avg_price, close)
-var string side = ""
 
 trailing_mult = input(1.2, title="Trailing Stop Multiplicador")
 break_even_mult = input(1.3, title="Break-Even Multiplicador")
@@ -109,10 +108,10 @@ sendTrade(secret, symbol, side, order_type, qty, price, stop_loss) =>
               '"symbol": "' + symbol + '", ' +
               '"side": "' + side + '", ' +
               '"order_type": "' + order_type + '", ' +
-              '"qty": "' + str.tostring(qty) + '", ' +  // Convertir qty a cadena
-              '"price": "' + str.tostring(price) + '", ' +  // Convertir price a cadena
-              '"stop_loss": "' + str.tostring(stop_loss) + '"}' // Convertir stop_loss a cadena
-    alert(payload, alert.freq_once_per_bar)  // Enviar el webhook
+              '"qty": "' + str.tostring(qty) + '", ' +
+              '"price": "' + str.tostring(price) + '", ' +
+              '"stop_loss": "' + str.tostring(stop_loss) + '"}'
+    alert(payload, alert.freq_once_per_bar)
 
 // *** Control de Posiciones y Capital Disponible ***
 can_trade = strategy.position_size == 0 and strategy.equity >= min_qty  // No hay posición activa y hay saldo suficiente
@@ -120,14 +119,12 @@ can_trade = strategy.position_size == 0 and strategy.equity >= min_qty  // No ha
 // *** Lógica de Entrada con Control de Posiciones ***
 if can_trade
     if entry_long
-        side := "Buy"
-        sendTrade(webhook_secret, side, syminfo.ticker, order_type, final_qty, price_entry, long_stop_price)
+        sendTrade(webhook_secret, syminfo.ticker, "Buy", order_type, final_qty, price_entry, long_stop_price)
         label.new(bar_index, high, "ENTRADA LONG", color=color.green, textcolor=color.white, size=size.auto)
         strategy.entry("Long", strategy.long, qty=final_qty)
 
     if entry_short
-        side := "Sell"
-        sendTrade(webhook_secret, side, syminfo.ticker, order_type, final_qty, price_entry, short_stop_price)
+        sendTrade(webhook_secret, syminfo.ticker, "Sell", order_type, final_qty, price_entry, short_stop_price)
         label.new(bar_index, high, "ENTRADA SHORT", color=color.red, textcolor=color.white, size=size.auto)
         strategy.entry("Short", strategy.short, qty=final_qty)
 
