@@ -5,6 +5,10 @@ strategy('Spot ATR Strategy', // Nombre actualizado
      commission_value=0.1,
      slippage=1,
      initial_capital=10000)
+<<<<<<< HEAD
+=======
+
+>>>>>>> bd63d4eb19b36707c75320633ace9853e46879be
 // --- Importar librería Personal (ASEGÚRATE QUE LOS DATOS SEAN CORRECTOS) ---
 import alexborda/AlexLib/1 as lib
 
@@ -19,13 +23,17 @@ string G_SIZE = "3. Tamaño de Posición"
 string G_MGMT = "4. Gestión Trade & TSL" // Grupo renombrado
 string G_ORD = "5. Configuración de Órdenes"
 string G_VIS = "6. Visuales y Depuración"
+<<<<<<< HEAD
 string TSL_METHOD_ATR_PRICE = "ATR (desde Precio)"
 string TSL_METHOD_ATR_LOWEST = "ATR (desde Mínimo Reciente)"
 string TSL_METHOD_PERCENT = "Porcentaje (desde Cierre)"
+=======
+>>>>>>> bd63d4eb19b36707c75320633ace9853e46879be
 
 // Inputs Filtros de Estrategia
 ema_length         = input.int(10, title="EMA Corta Longitud", group=G_STRAT, minval=1, tooltip="Período de la Media Móvil Exponencial (EMA) rápida, usada para lógica de salida y como referencia de corto plazo.")
 HigherTimeframe    = input.timeframe("D", title="EMA Larga TF", group=G_STRAT, tooltip="Temporalidad de la EMA lenta (largo plazo) para filtrar tendencia general (ej. 'D'=Diario, '240'=4 Horas). La entrada solo ocurre si el precio está sobre esta EMA.")
+<<<<<<< HEAD
 entry_lookback     = input.int(7, title="Entrada Lookback Mínimo", group=G_ENTRYEXIT, minval=2, tooltip="Número de barras hacia atrás para buscar el mínimo más bajo (`low`) como parte de la señal de entrada trigger.")
 entry_wait_bars    = input.int(3, title="Número de barras a esperar", group=G_ENTRYEXIT, minval=0, tooltip="Número de barras a esperar después de la señal 'Trigger' antes de buscar la vela de reversión (`close > open`) para ejecutar la compra.")
 exit_lookback      = input.int(7, title="Salida Lookback Máximo", group=G_ENTRYEXIT, minval=2, tooltip="Número de barras hacia atrás para buscar el cierre más alto (`close`) para la condición de Salida Peak.")
@@ -46,12 +54,54 @@ tsl_source         = input.string("low", "TSL Fuente [ATR Precio]", options=["cl
 trl_mult         = input.float(1.9, title='TSL Mult ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR usado para calcular la distancia del TSL en los métodos basados en ATR.", step=0.1)
 tsl_lookback     = input.int(10, "TSL Lookback Mínimo", group=G_MGMT, minval=2, tooltip="Número de barras hacia atrás para buscar el mínimo (`low`) usado en el método TSL 'ATR (desde Mínimo Reciente)'.")
 tsl_percent      = input.float(0.5, "TSL Porcentaje", group=G_MGMT, minval=0.1, maxval=1, tooltip="Distancia porcentual fija desde el cierre (`close`) usada para el TSL en el método 'Porcentaje'.", step=0.1)
+=======
+
+// Inputs Lógica Entrada/Salida
+entry_lookback     = input.int(7, title="Entrada Lookback Mínimo", group=G_ENTRYEXIT, minval=2, tooltip="Número de barras hacia atrás para buscar el mínimo más bajo (`low`) como parte de la señal de entrada trigger.")
+entry_wait_bars    = input.int(3, title="Número de barras a esperar", group=G_ENTRYEXIT, minval=0, tooltip="Número de barras a esperar después de la señal 'Trigger' antes de buscar la vela de reversión (`close > open`) para ejecutar la compra.")
+
+exit_lookback      = input.int(7, title="Salida Lookback Máximo", group=G_ENTRYEXIT, minval=2, tooltip="Número de barras hacia atrás para buscar el cierre más alto (`close`) para la condición de Salida Peak.")
+exit_ema_bars      = input.int(5, title="Salida Mín Barras s/EMA", group=G_ENTRYEXIT, minval=2, tooltip="Número mínimo de barras consecutivas que el precio debe cerrar sobre la EMA corta para activar la Salida Peak.")
+
+// Inputs ADX
+adx_len            = input.int(14, title='ADX Longitud', group=G_ADX, minval=1, tooltip="Número de períodos para el cálculo del Average Directional Index (ADX).")
+adx_smooth         = input.int(14, title='ADX Suavizado', group=G_ADX, minval=1, tooltip="Número de períodos para el suavizado interno del ADX (usualmente igual a la Longitud ADX).")
+adx_threshold_base = input.float(15.0, title='ADX Umbral Base', group=G_ADX, minval=0, tooltip="Nivel mínimo base que debe superar el ADX para considerar la entrada (se ajusta dinámicamente con la volatilidad ATR).")
+
+// Inputs Volumen
+vol_len            = input.int(20, title="Volumen Longitud MA", group=G_VOL, minval=1, tooltip="Número de períodos para la Media Móvil Exponencial (EMA) del volumen.")
+vol_factor         = input.float(1.1, title="Volumen Factor Mínimo", group=G_VOL, minval=0, tooltip="Factor multiplicador de la EMA de volumen. El volumen actual debe superar (EMA Volumen * Factor) para considerar la entrada.", step=0.1)
+
+// Inputs ATR
+atr_len            = input.int(14, title='ATR Longitud', group=G_ATR, minval=1, tooltip="Número de períodos para el cálculo del Average True Range (ATR).")
+atr_mult           = input.float(1.2, title='ATR Mult SL Inicial', group=G_ATR, minval=0.1, tooltip="Multiplicador del ATR para calcular la distancia del Stop Loss inicial desde el precio estimado de entrada.", step=0.1)
+
+// Inputs Tamaño de Posición
+eqty_type          = input.string(defval="Porcentaje", title="Tipo Tamaño", options=["Porcentaje","ATR"], group=G_SIZE, tooltip="Método para calcular el tamaño de la posición: 'Porcentaje' (usa % Máx Equity) o 'ATR' (usa % Riesgo y distancia SL).")
+eqty_percent       = input.float(99, title='Capital % Máx x Trade', group=G_SIZE, minval=1, maxval=100, tooltip="Máximo porcentaje del capital total permitido para usar en una sola operación.") / 100
+risk_percent       = input.float(100, title='ATR % Riesgo x Trade', group=G_SIZE, minval=0.1, maxval=100, tooltip="Porcentaje del capital total a arriesgar en una operación, usado solo si 'Tipo Tamaño' es 'ATR'.") / 100
+min_qty            = input.float(0.00011, title='Activo Cantidad Mínima', group=G_SIZE, step=0.0001, minval=0.00011, tooltip="Cantidad mínima del activo base (ej. BTC) permitida por el exchange para colocar una orden.")
+
+// Inputs Gestión Trade & TSL
+string TSL_METHOD_ATR_PRICE = "ATR (desde Precio)"
+string TSL_METHOD_ATR_LOWEST = "ATR (desde Mínimo Reciente)"
+string TSL_METHOD_PERCENT = "Porcentaje (desde Cierre)"
+tsl_method_input = input.string(TSL_METHOD_PERCENT, "TSL Método", options=[TSL_METHOD_ATR_PRICE, TSL_METHOD_ATR_LOWEST, TSL_METHOD_PERCENT], group=G_MGMT, tooltip="Elige el método de cálculo del Trailing Stop Loss (TSL). Las opciones explican cómo se calcula.")
+tsl_source       = input.string("low", "TSL Fuente [ATR Precio]", options=["close", "low"], group=G_MGMT, tooltip="Precio base (Close o Low) para el cálculo del TSL cuando el método es 'ATR (desde Precio)'.")
+trl_mult         = input.float(1.9, title='TSL Mult ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR usado para calcular la distancia del TSL en los métodos basados en ATR.", step=0.1)
+tsl_lookback     = input.int(10, "TSL Lookback Mínimo", group=G_MGMT, minval=2, tooltip="Número de barras hacia atrás para buscar el mínimo (`low`) usado en el método TSL 'ATR (desde Mínimo Reciente)'.")
+tsl_percent      = input.float(5.0, "TSL Porcentaje", group=G_MGMT, minval=0.1, tooltip="Distancia porcentual fija desde el cierre (`close`) usada para el TSL en el método 'Porcentaje'.") / 100.0
+>>>>>>> bd63d4eb19b36707c75320633ace9853e46879be
 be_mult          = input.float(1.0, title='BE Multiplicador ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR desde la entrada. El precio debe superar (Entrada + ATR * Mult) para mover el SL a Break-Even.", step=0.1)
 tp_mult          = input.float(1.7, title='TP Multiplicador ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR desde la entrada para calcular el nivel de Take Profit.", step=0.1)
 ex_mult          = input.float(1.0, title='Exit Multiplicador', group=G_MGMT, minval=0.1, tooltip="Multiplicador añade un margen de tolerancia al precio para que no necesite tocar exactamente el mínimo anterior, sino que puede estar ligeramente por encima hasta un % más alto.", step=0.1)
 
 // Inputs Configuración de Órdenes
+<<<<<<< HEAD
 order_type         = input.string("limit", title="Tipo Orden Entrada", options=["limit", "market"], group=G_ORD, tooltip="Tipo de orden a usar para las entradas (Market recomendado con entrada diferida).") 
+=======
+order_type         = input.string("limit", title="Tipo Orden Entrada", options=["limit", "market"], group=G_ORD, tooltip="Tipo de orden a usar para las entradas (Market recomendado con entrada diferida).") // Default Market
+>>>>>>> bd63d4eb19b36707c75320633ace9853e46879be
 price_offset_pips  = input.int(5, title='Límite Offset Pips', group=G_ORD, minval=0, tooltip="Para órdenes Límite: Número de pips/ticks por debajo del precio actual para colocar la orden. 0 usa el precio de cierre.")
 
 // New Inputs for Webhook Alerts
@@ -300,6 +350,93 @@ if strategy.position_size > 0 and exit_peak_condition and not long_trl_active an
         string peak_exit_alert_message = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "Peak Exit" }'
         alert(peak_exit_alert_message, alert.freq_once_per_bar_close, webhook=webhook_url)
 
+<<<<<<< HEAD
+=======
+// *** PLOTS PRINCIPALES ***
+plot(strategy.position_size > 0 ? long_entry_price : na, title='Precio Entrada', color=color.new(color.blue, 0), style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size > 0 ? long_sl_price : na, title='Precio Stop Loss', color=color.new(color.red, 0), style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size > 0 and not long_trl_active ? long_tp_price : na, title='Precio Take Profit (Activo)', color=color.new(color.green, 0), style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size > 0 and not long_be_active and not na(long_be_price) ? long_be_price : na, title='Nivel Act BE', color=color.new(color.orange, 0), style=plot.style_circles, linewidth=2)
+
+// Resaltar Barra de Ejecución
+bgcolor(bgcolor_active and executeBuy and can_trade ? color.new(color.lime, 85) : na)
+
+// --- PLOTEAR FORMAS EN CAMBIOS DE SL ---
+plotshape(be_activated_this_bar and show_debug_plots, title="BE Activated", location=location.belowbar, color=color.new(color.orange, 0), style=shape.triangleup, size=size.tiny, text="BE")
+plotshape(tsl_updated_this_bar and show_debug_plots, title="TSL Moved", location=location.belowbar, color=color.new(color.blue, 0), style=shape.triangleup, size=size.tiny, text="TSL")
+
+// *** LABELS DE DEBUG (Opcionales) ***
+// --- ACTUALIZADOS para Entrada Diferida ---
+var label debug_label = na
+var label entry_debug = na
+if show_debug_labels and barstate.isrealtime == false
+    // Label Magenta
+    string debug_label_text = ""
+    if not na(close)
+        float current_cost_dbg = cost_is_valid ? estimated_cost : na
+        debug_label_text :=
+         "\nclose: " + str.tostring(close) +
+         "\nPos size: " + str.tostring(strategy.position_size) +
+         "\nEquity: " + str.tostring(lib.round(equity,2)) +
+         "\nCost Est: " + str.tostring(current_cost_dbg) +
+         "\n--- QTY DEBUG ---" +
+         "\nCalc Qty Raw: " + str.tostring(dbg_calc_qty_raw, "#.#######") +
+         "\nMax Poss Qty: " + str.tostring(dbg_max_qty_allowed, "#.#######") +
+         "\nQty after Min: " + str.tostring(dbg_qty_after_min, "#.#######") +
+         "\nQty after Max: " + str.tostring(dbg_qty_after_max, "#.#######") +
+         "\nFINAL QTY: " + str.tostring(final_qty) +
+         "\n--- END QTY DEBUG ---" +
+         "\nmin_qty: " + str.tostring(min_qty) +
+         "\nSL Dist: " + str.tostring(lib.round(initial_sl_dista,2)) +
+         "\nENTRY TRIGGER: " + str.tostring(entry_trigger_condition) + // Condición inicial
+         "\nEXECUTE BUY: " + str.tostring(executeBuy) + // Condición final
+         "\nEXIT PEAK: " + str.tostring(exit_peak_condition) +
+         "\nADX: " + str.tostring(lib.round(adx,1)) + " > Th: " + str.tostring(lib.round(adx_threshold,1)) + " (" + str.tostring(adx_filter) + ")" +
+         "\nVol Rel: " + str.tostring(lib.round(vol_relative,2)) + " > F: " + str.tostring(vol_factor) + " (" + str.tostring(vol_filter) + ")"
+    if na(debug_label)
+        debug_label := label.new(bar_index, high, debug_label_text, color=color.new(color.purple, 20), style=label.style_label_down, size=size.small, textcolor=color.white, yloc=yloc.abovebar)
+    else
+        label.set_xy(debug_label, bar_index, high)
+        label.set_text(debug_label, debug_label_text)
+        label.set_textcolor(debug_label, color.white)
+
+    // Label Verde
+    string entry_debug_text =
+         "\nLowestLowOrPrior: " + str.tostring(isLowestLowOrPrior) +
+         "\nisBullish(HTF): " + str.tostring(isBullish) +
+         "\nADX OK: " + str.tostring(adx_filter) +
+         "\nVol OK: " + str.tostring(vol_filter) +
+         "\nsl_dist>0: " + str.tostring(initial_sl_dista > 0) +
+         "\n--- ENTRY LOGIC ---" +
+         "\nSignal Active?: " + str.tostring(entrySignalActive) +
+         "\nBars Since Sig: " + str.tostring(barsSinceSignal) +
+         "\nLowest Since Sig: " + str.tostring(lowestSinceSignal) +
+         "\nReversal Candle?: " + str.tostring(reversalCandle) +
+         "\nExecute Buy?: " + str.tostring(executeBuy) +
+         "\n--- TRADE PERMISSION ---" +
+         "\nCAN TRADE: " + str.tostring(can_trade) +
+         "\n  qty_valid: " + str.tostring(qty_is_valid) +
+         "\n  equity_enough: " + str.tostring(equity_is_enough) +
+         "\n--- BE DEBUG ---" +
+         "\nBE Price: " + str.tostring(long_be_price) +
+         "\nBE Active?: " + str.tostring(long_be_active) +
+         "\nClose > BE Price?: " + str.tostring(close > long_be_price) +
+         "\n--- PEAK EXIT ---" +
+         "\nHighestClose: " + str.tostring(isHighestClose) +
+         "\nBarsAboveEMA: " + str.tostring(barsAboveEMA) + " (" + str.tostring(stayedAboveEMA) + ")"
+    if na(entry_debug)
+        entry_debug := label.new(bar_index, low, entry_debug_text, color=color.new(color.teal, 20), style=label.style_label_up, size=size.small, textcolor=color.white, yloc=yloc.belowbar)
+    else
+        label.set_xy(entry_debug, bar_index, low)
+        label.set_text(entry_debug, entry_debug_text)
+        label.set_textcolor(entry_debug, color.white)
+else
+    label.delete(debug_label)
+    label.delete(entry_debug)
+    debug_label := na
+    entry_debug := na
+
+>>>>>>> bd63d4eb19b36707c75320633ace9853e46879be
 // EMA Plots
 plot(ema_value, title="EMA Corta", color=color.new(color.yellow, 0), linewidth=1)
 plot(htfEmaValue, title="EMA HTF (Non-Repaint)", color=color.new(color.aqua, 0), linewidth=1)
