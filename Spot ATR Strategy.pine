@@ -5,11 +5,8 @@ strategy('Spot ATR Strategy', // Nombre actualizado
      commission_value=0.1,
      slippage=1,
      initial_capital=10000)
-// --- Importar librería Personal (ASEGÚRATE QUE LOS DATOS SEAN CORRECTOS) ---
 import alexborda/AlexLib/1 as lib
 
-// *** Inputs de Estrategia ***
-// Grupos
 string G_STRAT = "1. Filtros de Estrategia"
 string G_ENTRYEXIT = "1.1 Lógica Entrada/Salida"
 string G_ADX = "1.2 Filtro ADX"
@@ -38,20 +35,20 @@ vol_factor         = input.float(1.1, title="Volumen Factor Mínimo", group=G_VO
 atr_len            = input.int(14, title='ATR Longitud', group=G_ATR, minval=1, tooltip="Número de períodos para el cálculo del Average True Range (ATR).")
 atr_mult           = input.float(1.2, title='ATR Mult SL Inicial', group=G_ATR, minval=0.1, tooltip="Multiplicador del ATR para calcular la distancia del Stop Loss inicial desde el precio estimado de entrada.", step=0.1)
 eqty_type          = input.string(defval="Porcentaje", title="Tipo Tamaño", options=["Porcentaje","ATR"], group=G_SIZE, tooltip="Método para calcular el tamaño de la posición: 'Porcentaje' (usa % Máx Equity) o 'ATR' (usa % Riesgo y distancia SL).")
-eqty_percent       = input.float(99, title='Capital % Máx x Trade', group=G_SIZE, minval=1, maxval=100, tooltip="Máximo porcentaje del capital total permitido para usar en una sola operación.") / 100
-risk_percent       = input.float(100, title='ATR % Riesgo x Trade', group=G_SIZE, minval=0.1, maxval=100, tooltip="Porcentaje del capital total a arriesgar en una operación, usado solo si 'Tipo Tamaño' es 'ATR'.") / 100
+eqty_percent       = input.float(0.9, title='Capital % Máx x Trade', group=G_SIZE, minval=0.01, maxval=1, step=0.01, tooltip="Máximo porcentaje del capital total permitido para usar en una sola operación.")
+risk_percent       = input.float(1, title='ATR % Riesgo x Trade', group=G_SIZE, minval=0.01, maxval=1, step=0.01, tooltip="Porcentaje del capital total a arriesgar en una operación, usado solo si 'Tipo Tamaño' es 'ATR'.")
 min_qty            = input.float(0.00011, title='Activo Cantidad Mínima', group=G_SIZE, step=0.0001, minval=0.00011, tooltip="Cantidad mínima del activo base (ej. BTC) permitida por el exchange para colocar una orden.")
-tsl_method_input = input.string(TSL_METHOD_PERCENT, "TSL Método", options=[TSL_METHOD_ATR_PRICE, TSL_METHOD_ATR_LOWEST, TSL_METHOD_PERCENT], group=G_MGMT, tooltip="Elige el método de cálculo del Trailing Stop Loss (TSL). Las opciones explican cómo se calcula.")
-tsl_source       = input.string("low", "TSL Fuente [ATR Precio]", options=["close", "low"], group=G_MGMT, tooltip="Precio base (Close o Low) para el cálculo del TSL cuando el método es 'ATR (desde Precio)'.")
-trl_mult         = input.float(1.9, title='TSL Mult ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR usado para calcular la distancia del TSL en los métodos basados en ATR.", step=0.1)
-tsl_lookback     = input.int(10, "TSL Lookback Mínimo", group=G_MGMT, minval=2, tooltip="Número de barras hacia atrás para buscar el mínimo (`low`) usado en el método TSL 'ATR (desde Mínimo Reciente)'.")
-tsl_percent      = input.float(5.0, "TSL Porcentaje", group=G_MGMT, minval=0.1, tooltip="Distancia porcentual fija desde el cierre (`close`) usada para el TSL en el método 'Porcentaje'.") / 100.0
-be_mult          = input.float(1.0, title='BE Multiplicador ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR desde la entrada. El precio debe superar (Entrada + ATR * Mult) para mover el SL a Break-Even.", step=0.1)
-tp_mult          = input.float(1.7, title='TP Multiplicador ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR desde la entrada para calcular el nivel de Take Profit.", step=0.1)
-order_type         = input.string("limit", title="Tipo Orden Entrada", options=["limit", "market"], group=G_ORD, tooltip="Tipo de orden a usar para las entradas (Market recomendado con entrada diferida).") // Default Market
+tsl_method_input   = input.string(TSL_METHOD_PERCENT, "TSL Método", options=[TSL_METHOD_ATR_PRICE, TSL_METHOD_ATR_LOWEST, TSL_METHOD_PERCENT], group=G_MGMT, tooltip="Elige el método de cálculo del Trailing Stop Loss (TSL). Las opciones explican cómo se calcula.")
+tsl_source         = input.string("low", "TSL Fuente [ATR Precio]", options=["close", "low"], group=G_MGMT, tooltip="Precio base (Close o Low) para el cálculo del TSL cuando el método es 'ATR (desde Precio)'.")
+trl_mult           = input.float(1.9, title='TSL Mult ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR usado para calcular la distancia del TSL en los métodos basados en ATR.", step=0.1)
+tsl_lookback       = input.int(10, "TSL Lookback Mínimo", group=G_MGMT, minval=2, tooltip="Número de barras hacia atrás para buscar el mínimo (`low`) usado en el método TSL 'ATR (desde Mínimo Reciente)'.")
+tsl_percent        = input.float(5.0, "TSL Porcentaje", group=G_MGMT, minval=0.01, step=0.01,  tooltip="Distancia porcentual fija desde el cierre (`close`) usada para el TSL en el método 'Porcentaje'.")
+be_mult            = input.float(1.0, title='BE Multiplicador ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR desde la entrada. El precio debe superar (Entrada + ATR * Mult) para mover el SL a Break-Even.", step=0.1)
+tp_mult            = input.float(1.7, title='TP Multiplicador ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR desde la entrada para calcular el nivel de Take Profit.", step=0.1)
+order_type         = input.string("limit", title="Tipo Orden Entrada", options=["limit", "market"], group=G_ORD, tooltip="Tipo de orden a usar para las entradas (Market recomendado con entrada diferida).")
 price_offset_pips  = input.int(5, title='Límite Offset Pips', group=G_ORD, minval=0, tooltip="Para órdenes Límite: Número de pips/ticks por debajo del precio actual para colocar la orden. 0 usa el precio de cierre.")
-webhook_alerts = input.bool(false, title="Enable Webhook Alerts?", group=G_ORD, tooltip="Enable sending alerts for trade execution via webhooks.")
-webhook_url = input.string("", title="Webhook URL", group=G_ORD, tooltip="The URL to send webhook alerts to.")
+webhook_alerts     = input.bool(false, title="Enable Webhook Alerts?", group=G_ORD, tooltip="Enable sending alerts for trade execution via webhooks.")
+webhook_url        = input.string("", title="Webhook URL", group=G_ORD, tooltip="The URL to send webhook alerts to.")
 
 // *** Variables Globales de Estado ***
 var float   calculated_qty        = na
@@ -129,7 +126,7 @@ else
 // Ajustes y Redondeo Final
 float qty_after_min = na(calculated_qty) ? na : math.min(calculated_qty, max_equity_risk / close)
 float qty_after_max = na(qty_after_min) ? na : math.max(min_qty, qty_after_min)
-final_qty           := na(qty_after_max) ? na : lib.round (qty_after_max,6) // Usar mintick
+final_qty           := na(qty_after_max) ? na : lib.round (qty_after_max,6)
 
 // *** GESTIÓN DE TRADE (SL/TP/BE/TSL) ***
 float long_be_price      = na
