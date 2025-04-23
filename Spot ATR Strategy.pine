@@ -35,14 +35,14 @@ vol_factor              = input.float(1.1, title="Volumen Factor Mínimo", group
 atr_len                 = input.int(14, title='ATR Longitud', group=G_ATR, minval=1, tooltip="Número de períodos para el cálculo del Average True Range (ATR).")
 atr_mult                = input.float(1.2, title='ATR Mult SL Inicial', group=G_ATR, minval=0.1, tooltip="Multiplicador del ATR para calcular la distancia del Stop Loss inicial desde el precio estimado de entrada.", step=0.1)
 eqty_type               = input.string(defval="Porcentaje", title="Tipo Tamaño", options=["Porcentaje","ATR"], group=G_SIZE, tooltip="Método para calcular el tamaño de la posición: 'Porcentaje' (usa % Máx Equity) o 'ATR' (usa % Riesgo y distancia SL).")
-eqty_percent            = input.float(99, title='Capital % Máx x Trade', group=G_SIZE, minval=1, maxval=100, tooltip="Máximo porcentaje del capital total permitido para usar en una sola operación.") / 100
-risk_percent            = input.float(100, title='ATR % Riesgo x Trade', group=G_SIZE, minval=0.1, maxval=100, tooltip="Porcentaje del capital total a arriesgar en una operación, usado solo si 'Tipo Tamaño' es 'ATR'.") / 100
+eqty_percent            = input.float(0.9, title='Capital % Máx x Trade', group=G_SIZE, minval=0.1, maxval=1, step=0.01, tooltip="Máximo porcentaje del capital total permitido para usar en una sola operación.")
+risk_percent            = input.float(1, title='ATR % Riesgo x Trade', group=G_SIZE, minval=0.1, maxval=1, step=0.01, tooltip="Porcentaje del capital total a arriesgar en una operación, usado solo si 'Tipo Tamaño' es 'ATR'.")
 min_qty                 = input.float(0.00011, title='Activo Cantidad Mínima', group=G_SIZE, step=0.0001, minval=0.00011, tooltip="Cantidad mínima del activo base (ej. BTC) permitida por el exchange para colocar una orden.")
 tsl_method_input        = input.string(TSL_METHOD_PERCENT, "TSL Método", options=[TSL_METHOD_ATR_PRICE, TSL_METHOD_ATR_LOWEST, TSL_METHOD_PERCENT], group=G_MGMT, tooltip="Elige el método de cálculo del Trailing Stop Loss (TSL). Las opciones explican cómo se calcula.")
 tsl_source              = input.string("low", "TSL Fuente [ATR Precio]", options=["close", "low"], group=G_MGMT, tooltip="Precio base (Close o Low) para el cálculo del TSL cuando el método es 'ATR (desde Precio)'.")
 trl_mult                = input.float(1.9, title='TSL Mult ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR usado para calcular la distancia del TSL en los métodos basados en ATR.", step=0.1)
 tsl_lookback            = input.int(10, "TSL Lookback Mínimo", group=G_MGMT, minval=2, tooltip="Número de barras hacia atrás para buscar el mínimo (`low`) usado en el método TSL 'ATR (desde Mínimo Reciente)'.")
-tsl_percent             = input.float(5.0, "TSL Porcentaje", group=G_MGMT, minval=0.1, tooltip="Distancia porcentual fija desde el cierre (`close`) usada para el TSL en el método 'Porcentaje'.") / 100.0
+tsl_percent             = input.float(0.05, "TSL Porcentaje", group=G_MGMT, minval=0.01, maxval=1, step=0.01, tooltip="Distancia porcentual fija desde el cierre (`close`) usada para el TSL en el método 'Porcentaje'.")
 be_mult                 = input.float(1.0, title='BE Multiplicador ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR desde la entrada. El precio debe superar (Entrada + ATR * Mult) para mover el SL a Break-Even.", step=0.1)
 tp_mult                 = input.float(1.7, title='TP Multiplicador ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR desde la entrada para calcular el nivel de Take Profit.", step=0.1)
 ex_mult                 = input.float(1.0, title='Exit Multiplicador', group=G_MGMT, minval=0.1, tooltip="Multiplicador añade un margen de tolerancia al precio para que no necesite tocar exactamente el mínimo anterior, sino que puede estar ligeramente por encima hasta un % más alto.", step=0.1)
@@ -128,13 +128,7 @@ float qty_after_min = na(calculated_qty) ? na : math.min(calculated_qty, max_equ
 float qty_after_max = na(qty_after_min) ? na : math.max(min_qty, qty_after_min)
 final_qty           := na(qty_after_max) ? na : lib.round (qty_after_max,6) // Usar mintick
 
-if show_debug_labels
-    dbg_calc_qty_raw    := calculated_qty
-    dbg_max_qty_allowed := max_equity_risk / close
-    dbg_qty_after_min   := qty_after_min
-    dbg_qty_after_max   := qty_after_max
-
-// *** GESTIÓN DE TRADE (SL/TP/BE/TSL) ***
+// *** GESTIÓN DE TRADE (SL/TP/TSL) ***
 float long_be_price      = na
 float potential_new_stop = na
 bool be_activated_this_bar = false
@@ -250,23 +244,30 @@ if executeBuy and can_trade
             if order_type == 'limit'
                 entry_alert_message += ', "price": ' + str.tostring(entry_price)
             entry_alert_message += ' }'
-            alert(entry_alert_message, alert.freq_once_per_bar_close, webhook=webhook_url)
+            //alert(entry_alert_message, alert.freq_once_per_bar_close, webhook=webhook_url)
 
 // *** CONDICIONES DE SALIDA ***
-if strategy.position_size > 0 and not na(long_sl_price) and isBullish
-    float actual_limit_price = long_trl_active ? na : long_tp_price// TP Condicional
-    strategy.exit(id='Venta SL/TP', from_entry='Compra', stop=long_sl_price, limit=actual_limit_price, comment_profit='TP', comment_loss='SL/BE/TSL')
 
+// Salida por Stop Loss, Break Even o Trailing Stop Loss (gestionado por el script)
+if strategy.position_size > 0 and not na(long_sl_price) and close < long_sl_price and isBullish
+    strategy.close(id='Compra', comment='SL/TSL Exit')
     if enable_webhook_alerts and webhook_url != ""
-        string exit_alert_message = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "SL/TP/BE/TSL" }'
-        alert(exit_alert_message, alert.freq_once_per_bar_close, webhook=webhook_url)
+        string exit_alert_message = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "SL/BE/TSL" }'
+        //alert(exit_alert_message, alert.freq_once_per_bar_close, webhook=webhook_url)
 
+// Salida por Take Profit (gestionado por el script)
+if strategy.position_size > 0 and not na(long_tp_price) and close > long_tp_price and not long_trl_active and isBullish
+    strategy.close(id='Compra', comment='TP Exit')
+    if enable_webhook_alerts and webhook_url != ""
+        string exit_alert_message = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "TP" }'
+        //alert(exit_alert_message, alert.freq_once_per_bar_close, webhook=webhook_url)
+
+// Salida por Peak Exit (ya existente)
 if strategy.position_size > 0 and exit_peak_condition and not long_trl_active and isBullish
     strategy.close(id='Compra', comment='Peak Exit')
-
     if enable_webhook_alerts and webhook_url != ""
         string peak_exit_alert_message = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "Peak Exit" }'
-        alert(peak_exit_alert_message, alert.freq_once_per_bar_close, webhook=webhook_url)
+        //alert(peak_exit_alert_message, alert.freq_once_per_bar_close, webhook=webhook_url)
 
 plot(ema_value, title="EMA Corta", color=color.new(color.yellow, 0), linewidth=1)
 plot(htfEmaValue, title="EMA HTF (Non-Repaint)", color=color.new(color.aqua, 0), linewidth=1)
