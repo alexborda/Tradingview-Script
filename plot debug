@@ -1,9 +1,32 @@
+
+// Inputs Visuales y Depuración
+show_debug_plots   = input.bool(false, title="Ver Plots Debug?", group=G_VIS, tooltip="Activa/Desactiva la visualización de plots técnicos adicionales para depuración.")
+show_debug_labels  = input.bool(true, title="Ver Labels Debug?", group=G_VIS, tooltip="Activa/Desactiva la visualización de etiquetas con información detallada del estado y cálculos.")
+bgcolor_active     = input.bool(true, title="Resaltar Fondo Ejecución?", group=G_VIS, tooltip="Activa/Desactiva el resaltado de fondo en las barras donde se ejecuta una entrada.")
+
+// *** Variables Globales de Estado ***
 // *** PLOTS PRINCIPALES ***
 plot(strategy.position_size > 0 ? long_entry_price : na, title='Precio Entrada', color=color.new(color.blue, 0), style=plot.style_linebr, linewidth=2)
 plot(strategy.position_size > 0 ? long_sl_price : na, title='Precio Stop Loss', color=color.new(color.red, 0), style=plot.style_linebr, linewidth=2)
 plot(strategy.position_size > 0 and not long_trl_active ? long_tp_price : na, title='Precio Take Profit (Activo)', color=color.new(color.green, 0), style=plot.style_linebr, linewidth=2)
 plot(strategy.position_size > 0 and not long_be_active and not na(long_be_price) ? long_be_price : na, title='Nivel Act BE', color=color.new(color.orange, 0), style=plot.style_circles, linewidth=2)
 
+// Variables para Debug
+var float dbg_calc_qty_raw    = na
+var float dbg_max_qty_allowed = na
+var float dbg_qty_after_min   = na
+var float dbg_qty_after_max   = na
+
+if show_debug_labels
+    dbg_calc_qty_raw    := calculated_qty
+    dbg_max_qty_allowed := max_equity_risk / close
+    dbg_qty_after_min   := qty_after_min
+    dbg_qty_after_max   := qty_after_max
+    
+// Inputs Visuales y Depuración
+show_debug_plots   = input.bool(false, title="Ver Plots Debug?", group=G_VIS, tooltip="Activa/Desactiva la visualización de plots técnicos adicionales para depuración.")
+show_debug_labels  = input.bool(true, title="Ver Labels Debug?", group=G_VIS, tooltip="Activa/Desactiva la visualización de etiquetas con información detallada del estado y cálculos.")
+bgcolor_active     = input.bool(true, title="Resaltar Fondo Ejecución?", group=G_VIS, tooltip="Activa/Desactiva el resaltado de fondo en las barras donde se ejecuta una entrada.")
 // Resaltar Barra de Ejecución
 bgcolor(bgcolor_active and executeBuy and can_trade ? color.new(color.lime, 85) : na)
 
