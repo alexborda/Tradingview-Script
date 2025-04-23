@@ -1,0 +1,83 @@
+// *** PLOTS PRINCIPALES ***
+plot(strategy.position_size > 0 ? long_entry_price : na, title='Precio Entrada', color=color.new(color.blue, 0), style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size > 0 ? long_sl_price : na, title='Precio Stop Loss', color=color.new(color.red, 0), style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size > 0 and not long_trl_active ? long_tp_price : na, title='Precio Take Profit (Activo)', color=color.new(color.green, 0), style=plot.style_linebr, linewidth=2)
+plot(strategy.position_size > 0 and not long_be_active and not na(long_be_price) ? long_be_price : na, title='Nivel Act BE', color=color.new(color.orange, 0), style=plot.style_circles, linewidth=2)
+
+// Resaltar Barra de Ejecución
+bgcolor(bgcolor_active and executeBuy and can_trade ? color.new(color.lime, 85) : na)
+
+// --- PLOTEAR FORMAS EN CAMBIOS DE SL ---
+plotshape(be_activated_this_bar and show_debug_plots, title="BE Activated", location=location.belowbar, color=color.new(color.orange, 0), style=shape.triangleup, size=size.tiny, text="BE")
+plotshape(tsl_updated_this_bar and show_debug_plots, title="TSL Moved", location=location.belowbar, color=color.new(color.blue, 0), style=shape.triangleup, size=size.tiny, text="TSL")
+
+// *** LABELS DE DEBUG (Opcionales) ***
+// --- ACTUALIZADOS para Entrada Diferida ---
+var label debug_label = na
+var label entry_debug = na
+if show_debug_labels and barstate.isrealtime == false
+    // Label Magenta
+    string debug_label_text = ""
+    if not na(close)
+        float current_cost_dbg = cost_is_valid ? estimated_cost : na
+        debug_label_text :=
+         "\nclose: " + str.tostring(close) +
+         "\nPos size: " + str.tostring(strategy.position_size) +
+         "\nEquity: " + str.tostring(lib.round(equity,2)) +
+         "\nCost Est: " + str.tostring(current_cost_dbg) +
+         "\n--- QTY DEBUG ---" +
+         "\nCalc Qty Raw: " + str.tostring(dbg_calc_qty_raw, "#.#######") +
+         "\nMax Poss Qty: " + str.tostring(dbg_max_qty_allowed, "#.#######") +
+         "\nQty after Min: " + str.tostring(dbg_qty_after_min, "#.#######") +
+         "\nQty after Max: " + str.tostring(dbg_qty_after_max, "#.#######") +
+         "\nFINAL QTY: " + str.tostring(final_qty) +
+         "\n--- END QTY DEBUG ---" +
+         "\nmin_qty: " + str.tostring(min_qty) +
+         "\nSL Dist: " + str.tostring(lib.round(initial_sl_dista,2)) +
+         "\nENTRY TRIGGER: " + str.tostring(entry_trigger_condition) + // Condición inicial
+         "\nEXECUTE BUY: " + str.tostring(executeBuy) + // Condición final
+         "\nEXIT PEAK: " + str.tostring(exit_peak_condition) +
+         "\nADX: " + str.tostring(lib.round(adx,1)) + " > Th: " + str.tostring(lib.round(adx_threshold,1)) + " (" + str.tostring(adx_filter) + ")" +
+         "\nVol Rel: " + str.tostring(lib.round(vol_relative,2)) + " > F: " + str.tostring(vol_factor) + " (" + str.tostring(vol_filter) + ")"
+    if na(debug_label)
+        debug_label := label.new(bar_index, high, debug_label_text, color=color.new(color.purple, 20), style=label.style_label_down, size=size.small, textcolor=color.white, yloc=yloc.abovebar)
+    else
+        label.set_xy(debug_label, bar_index, high)
+        label.set_text(debug_label, debug_label_text)
+        label.set_textcolor(debug_label, color.white)
+
+    // Label Verde
+    string entry_debug_text =
+         "\nLowestLowOrPrior: " + str.tostring(isLowestLowOrPrior) +
+         "\nisBullish(HTF): " + str.tostring(isBullish) +
+         "\nADX OK: " + str.tostring(adx_filter) +
+         "\nVol OK: " + str.tostring(vol_filter) +
+         "\nsl_dist>0: " + str.tostring(initial_sl_dista > 0) +
+         "\n--- ENTRY LOGIC ---" +
+         "\nSignal Active?: " + str.tostring(entrySignalActive) +
+         "\nBars Since Sig: " + str.tostring(barsSinceSignal) +
+         "\nLowest Since Sig: " + str.tostring(lowestSinceSignal) +
+         "\nReversal Candle?: " + str.tostring(reversalCandle) +
+         "\nExecute Buy?: " + str.tostring(executeBuy) +
+         "\n--- TRADE PERMISSION ---" +
+         "\nCAN TRADE: " + str.tostring(can_trade) +
+         "\n  qty_valid: " + str.tostring(qty_is_valid) +
+         "\n  equity_enough: " + str.tostring(equity_is_enough) +
+         "\n--- BE DEBUG ---" +
+         "\nBE Price: " + str.tostring(long_be_price) +
+         "\nBE Active?: " + str.tostring(long_be_active) +
+         "\nClose > BE Price?: " + str.tostring(close > long_be_price) +
+         "\n--- PEAK EXIT ---" +
+         "\nHighestClose: " + str.tostring(isHighestClose) +
+         "\nBarsAboveEMA: " + str.tostring(barsAboveEMA) + " (" + str.tostring(stayedAboveEMA) + ")"
+    if na(entry_debug)
+        entry_debug := label.new(bar_index, low, entry_debug_text, color=color.new(color.teal, 20), style=label.style_label_up, size=size.small, textcolor=color.white, yloc=yloc.belowbar)
+    else
+        label.set_xy(entry_debug, bar_index, low)
+        label.set_text(entry_debug, entry_debug_text)
+        label.set_textcolor(entry_debug, color.white)
+else
+    label.delete(debug_label)
+    label.delete(entry_debug)
+    debug_label := na
+    entry_debug := na
