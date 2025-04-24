@@ -1,10 +1,11 @@
 //@version=6
-strategy('Spot ATR Strategy', // Nombre actualizado
+strategy('Spot ATR Strategy', 
      overlay=true,
      commission_type=strategy.commission.percent,
      commission_value=0.1,
      slippage=1,
      initial_capital=10000)
+
 // --- Importar librería Personal (ASEGÚRATE QUE LOS DATOS SEAN CORRECTOS) ---
 import alexborda/AlexLib/1 as lib
 
@@ -16,9 +17,10 @@ string G_ADX = "1.2 Filtro ADX"
 string G_VOL = "1.3 Filtro Volumen"
 string G_ATR = "2. Configuración ATR"
 string G_SIZE = "3. Tamaño de Posición"
-string G_MGMT = "4. Gestión Trade & TSL" // Grupo renombrado
+string G_MGMT = "4. Gestión Trade & TSL"
 string G_ORD = "5. Configuración de Órdenes"
 string G_VIS = "6. Visuales y Depuración"
+string G_RISK = "7. Control de Riesgo Adicional" // Nuevo grupo para gestión de riesgo adicional
 string TSL_METHOD_ATR_PRICE = "ATR (desde Precio)"
 string TSL_METHOD_ATR_LOWEST = "ATR (desde Mínimo Reciente)"
 string TSL_METHOD_PERCENT = "Porcentaje (desde Cierre)"
@@ -28,15 +30,19 @@ ema_length         = input.int(10, title="EMA Corta Longitud", group=G_STRAT, mi
 HigherTimeframe    = input.timeframe("D", title="EMA Larga TF", group=G_STRAT, tooltip="Temporalidad de la EMA lenta (largo plazo) para filtrar tendencia general (ej. 'D'=Diario, '240'=4 Horas). La entrada solo ocurre si el precio está sobre esta EMA.")
 entry_lookback     = input.int(7, title="Entrada Lookback Mínimo", group=G_ENTRYEXIT, minval=2, tooltip="Número de barras hacia atrás para buscar el mínimo más bajo (`low`) como parte de la señal de entrada trigger.")
 entry_wait_bars    = input.int(3, title="Número de barras a esperar", group=G_ENTRYEXIT, minval=0, tooltip="Número de barras a esperar después de la señal 'Trigger' antes de buscar la vela de reversión (`close > open`) para ejecutar la compra.")
+entry_expiry_bars  = input.int(10, title="Entrada Expiración (barras)", group=G_ENTRYEXIT, minval=0, tooltip="Número máximo de barras a esperar después del trigger. Si se supera este límite, la señal expira y se reinicia.") // NUEVO: Expiración de señal
 exit_lookback      = input.int(7, title="Salida Lookback Máximo", group=G_ENTRYEXIT, minval=2, tooltip="Número de barras hacia atrás para buscar el cierre más alto (`close`) para la condición de Salida Peak.")
 exit_ema_bars      = input.int(5, title="Salida Mín Barras s/EMA", group=G_ENTRYEXIT, minval=2, tooltip="Número mínimo de barras consecutivas que el precio debe cerrar sobre la EMA corta para activar la Salida Peak.")
 adx_len            = input.int(14, title='ADX Longitud', group=G_ADX, minval=1, tooltip="Número de períodos para el cálculo del Average Directional Index (ADX).")
 adx_smooth         = input.int(14, title='ADX Suavizado', group=G_ADX, minval=1, tooltip="Número de períodos para el suavizado interno del ADX (usualmente igual a la Longitud ADX).")
 adx_threshold_base = input.float(15.0, title='ADX Umbral Base', group=G_ADX, minval=0, tooltip="Nivel mínimo base que debe superar el ADX para considerar la entrada (se ajusta dinámicamente con la volatilidad ATR).")
+use_adx_filter     = input.bool(true, title="Usar Filtro ADX", group=G_ADX, tooltip="Activar/desactivar el filtro ADX para las entradas.") // NUEVO: Opción para activar/desactivar ADX
 vol_len            = input.int(20, title="Volumen Longitud MA", group=G_VOL, minval=1, tooltip="Número de períodos para la Media Móvil Exponencial (EMA) del volumen.")
 vol_factor         = input.float(1.1, title="Volumen Factor Mínimo", group=G_VOL, minval=0, tooltip="Factor multiplicador de la EMA de volumen. El volumen actual debe superar (EMA Volumen * Factor) para considerar la entrada.", step=0.1)
+use_vol_filter     = input.bool(true, title="Usar Filtro Volumen", group=G_VOL, tooltip="Activar/desactivar el filtro de volumen para las entradas.") // NUEVO: Opción para activar/desactivar volumen
 atr_len            = input.int(14, title='ATR Longitud', group=G_ATR, minval=1, tooltip="Número de períodos para el cálculo del Average True Range (ATR).")
 atr_mult           = input.float(1.2, title='ATR Mult SL Inicial', group=G_ATR, minval=0.1, tooltip="Multiplicador del ATR para calcular la distancia del Stop Loss inicial desde el precio estimado de entrada.", step=0.1)
+min_sl_percent     = input.float(0.5, title='SL Mínimo %', group=G_ATR, minval=0.01, maxval=10, tooltip="Distancia mínima del Stop Loss como porcentaje del precio de entrada.", step=0.01) // NUEVO: SL mínimo configurable
 eqty_type          = input.string(defval="Porcentaje", title="Tipo Tamaño", options=["Porcentaje","ATR"], group=G_SIZE, tooltip="Método para calcular el tamaño de la posición: 'Porcentaje' (usa % Máx Equity) o 'ATR' (usa % Riesgo y distancia SL).")
 eqty_percent       = input.float(0.9, title='Capital % Máx x Trade', group=G_SIZE, minval=0.01, maxval=1, tooltip="Máximo porcentaje del capital total permitido para usar en una sola operación.", step=0.01)
 risk_percent       = input.float(1, title='ATR % Riesgo x Trade', group=G_SIZE, minval=0.01, maxval=1, tooltip="Porcentaje del capital total a arriesgar en una operación, usado solo si 'Tipo Tamaño' es 'ATR'.", step=0.01)
@@ -49,35 +55,46 @@ tsl_percent        = input.float(0.5, "TSL Porcentaje", group=G_MGMT, minval=0.0
 be_mult            = input.float(1.0, title='BE Multiplicador ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR desde la entrada. El precio debe superar (Entrada + ATR * Mult) para mover el SL a Break-Even.", step=0.1)
 tp_mult            = input.float(1.7, title='TP Multiplicador ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR desde la entrada para calcular el nivel de Take Profit.", step=0.1)
 ex_mult            = input.float(1.0, title='Exit Multiplicador', group=G_MGMT, minval=0.1, tooltip="Multiplicador añade un margen de tolerancia al precio para que no necesite tocar exactamente el mínimo anterior, sino que puede estar ligeramente por encima hasta un % más alto.", step=0.1)
+require_vol_confirm= input.bool(true, title="Requerir Volumen para Salida Peak", group=G_MGMT, tooltip="Requiere que el volumen sea mayor que el promedio para activar la salida Peak.") // NUEVO: Confirmación de volumen para salida
+
+// Control de Riesgo Adicional
+max_trades_per_day = input.int(3, title="Máx Trades por Día", group=G_RISK, minval=1, tooltip="Número máximo de operaciones permitidas por día.") // NUEVO: Control de riesgo adicional
+max_drawdown_pct   = input.float(10, title="Máx Drawdown %", group=G_RISK, minval=1, maxval=100, tooltip="Máximo drawdown permitido como porcentaje del capital antes de detener operaciones.", step=0.1) // NUEVO: Control de drawdown
 
 // Inputs Configuración de Órdenes
 order_type         = input.string("limit", title="Tipo Orden Entrada", options=["limit", "market"], group=G_ORD, tooltip="Tipo de orden a usar para las entradas (Market recomendado con entrada diferida).") 
 price_offset_pips  = input.int(5, title='Límite Offset Pips', group=G_ORD, minval=0, tooltip="Para órdenes Límite: Número de pips/ticks por debajo del precio actual para colocar la orden. 0 usa el precio de cierre.")
 
-// New Inputs for Webhook Alerts
+// Inputs para Alertas Webhook
 enable_webhook_alerts = input.bool(false, title="Enable Webhook Alerts?", group=G_ORD, tooltip="Enable sending alerts for trade execution via webhooks.")
 webhook_url = input.string("", title="Webhook URL", group=G_ORD, tooltip="The URL to send webhook alerts to.")
 
-
 // *** Variables Globales de Estado ***
-var float   calculated_qty        = na
-var float   final_qty             = na
-var float   long_entry_price      = na
-var float   long_sl_price         = na
-var float   long_tp_price         = na
-var bool    long_be_active        = false
-var bool    long_trl_active       = false
-var bool    entrySignalActive     = false
-var int     barsSinceSignal       = 0
-var float   lowestSinceSignal     = na
+var float   calculated_qty    = na
+var float   final_qty         = na
+var float   entry_price       = na
+var float   sl_price          = na
+var float   tp_price          = na
+var bool    be_active         = false
+var bool    trl_active        = false
+var bool    entrySignalActive = false
+var int     barsSinceSignal   = 0
+var float   lowestSinceSignal = na
+var int     trades_today      = 0
+var float   peak_equity       = strategy.initial_capital
+var float   drawdown_amount   = 0.0
+var bool    risk_limit_reached= false
+var int     consecutive_losses= 0
+
+// *** Función para enviar alertas webhook *** (NUEVO: Refactorizado como función)
 
 // *** Cálculos de Indicadores ***
-// EMAs
+// EMAs - Optimizado para calcular una sola vez
 ema_value         = ta.ema(close, ema_length)
 float htfEmaValue = request.security(syminfo.tickerid, HigherTimeframe, ema_value[1], lookahead=barmerge.lookahead_off)
 bool isBullish    = close > htfEmaValue
 
-// ATR Robusto
+// ATR Robusto - Optimizado
 float tr = ta.tr
 float atr_from_ta = ta.atr(atr_len)
 float sma_of_tr = ta.sma(tr, atr_len)
@@ -87,46 +104,58 @@ if na(atr_value) or atr_value <= 0
 if na(atr_value) or atr_value <= 0
     atr_value := close * 0.02
 
-// Distancia SL Inicial
-initial_sl_dista   = atr_value * atr_mult
-initial_sl_dista  := math.max(initial_sl_dista, close * 0.005)
+// Distancia SL Inicial - Con mínimo configurable
+initial_sl_dista = atr_value * atr_mult
+initial_sl_dista := math.max(initial_sl_dista, close * (min_sl_percent/100))
 
-// ADX
+// ADX - Optimizado para calcular una sola vez
 [di_plus, di_minus, adx] = ta.dmi(adx_len, adx_smooth)
 float volatility_factor = close > 0 ? atr_value / close : 0
 float adx_threshold = adx_threshold_base * (1 + volatility_factor)
-bool adx_filter = adx > adx_threshold
+bool adx_filter = not use_adx_filter or (adx > adx_threshold) // MEJORADO: usa flag para activar/desactivar
 
-// Volumen Relativo
+// Volumen Relativo - Optimizado
 float vol_avg = ta.ema(volume, vol_len)
 float vol_relative = vol_avg > 0 ? volume / vol_avg : 0
-bool vol_filter = volume > 0 and vol_relative > vol_factor
+bool vol_filter = not use_vol_filter or (volume > 0 and vol_relative > vol_factor) // MEJORADO: usa flag para activar/desactivar
 
-// Condiciones Específicas Entrada/Salida
+// Condiciones Específicas Entrada/Salida - Optimizado para calcular valores una sola vez
 float lowest_low_current = ta.lowest(low, entry_lookback) * ex_mult
-float lowest_low_prior   = ta.lowest(low[1], entry_lookback)
+float lowest_low_prior = ta.lowest(low[1], entry_lookback)
 bool isLowestLowOrPrior = low == lowest_low_current or low[1] == lowest_low_prior
-bool isBelowEMA     = close < ema_value
-bool isHighestClose = close == ta.highest(close, exit_lookback)
-int  barsAboveEMA   = ta.barssince(close <= ema_value)
+bool isBelowEMA = close < ema_value
+
+// Para salida peak - Optimizado
+float highest_exit_close = ta.highest(close, exit_lookback)
+bool isHighestClose = close == highest_exit_close
+int barsAboveEMA = ta.barssince(close <= ema_value)
 bool stayedAboveEMA = barsAboveEMA >= exit_ema_bars
-bool exit_peak_condition = isHighestClose and stayedAboveEMA
+bool vol_confirm_exit = not require_vol_confirm or vol_relative > 1.0
+bool exit_peak_condition = isHighestClose and stayedAboveEMA and vol_confirm_exit // MEJORADO: añadida confirmación de volumen
+
+// *** Control de Riesgo Adicional *** (NUEVO)
+// Resetear contadores diarios al inicio de un nuevo día
+if time("D") != time("D")[1]
+    trades_today := 0
+
+// Actualizar pico de capital y calcular Drawdown
+peak_equity := math.max(peak_equity, strategy.equity)
+drawdown_amount := strategy.equity - peak_equity
+
+// Verificar límites de riesgo
+
+float drawdown_percent = peak_equity > 0 ? drawdown_amount / peak_equity * 100 : 0.0
+risk_limit_reached := trades_today >= max_trades_per_day or drawdown_percent <= -max_drawdown_pct
 
 // *** Gestión de Riesgo y Tamaño de Posición ***
-equity          = strategy.equity
+equity = strategy.equity
 max_equity_risk = equity * eqty_percent
-risk_per_trade  = equity * risk_percent
+risk_per_trade = equity * risk_percent
 
-// Variables para Debug
-var float dbg_calc_qty_raw    = na
-var float dbg_max_qty_allowed = na
-var float dbg_qty_after_min   = na
-var float dbg_qty_after_max   = na
-
-// Cálculo de Cantidad
+// Cálculo de Cantidad - Optimizado
 calculated_qty := 0.0
 if close > 0
-    if eqty_type == 'Porcentaje' // Corregido
+    if eqty_type == 'Porcentaje'
         calculated_qty := max_equity_risk / close
     else if eqty_type == 'ATR'
         if initial_sl_dista > 0
@@ -141,82 +170,88 @@ else
 // Ajustes y Redondeo Final
 float qty_after_min = na(calculated_qty) ? na : math.min(calculated_qty, max_equity_risk / close)
 float qty_after_max = na(qty_after_min) ? na : math.max(min_qty, qty_after_min)
-final_qty           := na(qty_after_max) ? na : lib.round (qty_after_max,6) // Usar mintick
+final_qty := na(qty_after_max) ? na : lib.round(qty_after_max, 6)
 
+// *** GESTIÓN DE TRADE (SL/TP/TSL) *** - Refactorizado
+// Función para calcular SL/TP/BE/TSL (NUEVO: Funciones para reducir redundancia)
+calcTakeProfit(entry, atr) =>
+    if not na(entry) and entry > 0 and not na(atr) and atr > 0
+        float tp_atr_distance = atr * tp_mult
+        tp_atr_distance := math.max(tp_atr_distance, entry * 0.01)
+        lib.round(entry + tp_atr_distance, 5)
+    else
+        na
 
+calcBreakEvenLevel(entry, atr) =>
+    if not na(entry) and entry > 0 and not na(atr) and atr > 0
+        float be_atr_distance = atr * be_mult
+        be_atr_distance := math.max(be_atr_distance, entry * 0.005)
+        lib.round(entry + be_atr_distance, 5)
+    else
+        na
 
-// *** GESTIÓN DE TRADE (SL/TP/TSL) ***
-float long_be_price      = na
+calcTrailingStop(currentPrice, atr, lowestPrice) =>
+    if not na(currentPrice) and currentPrice > 0 and not na(atr) and atr > 0
+        float tsl_atr_distance = atr * trl_mult
+        tsl_atr_distance := math.max(tsl_atr_distance, currentPrice * 0.005)
+        
+        if tsl_method_input == TSL_METHOD_ATR_PRICE
+            float base_price = tsl_source == "close" ? close : low
+            lib.round(base_price - tsl_atr_distance, 5)
+        else if tsl_method_input == TSL_METHOD_ATR_LOWEST
+            lib.round(lowestPrice - tsl_atr_distance, 5)
+        else // TSL_METHOD_PERCENT
+            lib.round(currentPrice * (1 - tsl_percent), 5)
+    else
+        na
+
+float be_price = na
 float potential_new_stop = na
 bool be_activated_this_bar = false
 bool tsl_updated_this_bar = false
 float lowest_low_for_tsl = ta.lowest(low, tsl_lookback)
 
 if strategy.position_size > 0
-    long_entry_price := strategy.position_avg_price
-
-    // Calcular TP
-    if not na(long_entry_price) and long_entry_price > 0 and not na(atr_value) and atr_value > 0
-        float tp_atr_distance = atr_value * tp_mult
-        tp_atr_distance := math.max(tp_atr_distance, long_entry_price * 0.01)
-        long_tp_price := lib.round(long_entry_price + tp_atr_distance, 5)
-    else
-        long_tp_price := na
-
-    // Calcular Nivel Activación BE
-    if not na(long_entry_price) and long_entry_price > 0 and not na(atr_value) and atr_value > 0
-        float be_atr_distance = atr_value * be_mult
-        be_atr_distance := math.max(be_atr_distance, long_entry_price * 0.005)
-        long_be_price := lib.round(long_entry_price + be_atr_distance, 5)
-    else
-        long_be_price := na
-
-    // Calcular Nivel Potencial TSL (Lógica Unificada)
-    potential_new_stop := na
+    entry_price := strategy.position_avg_price
     
-    if not na(close) and close > 0 and not na(atr_value) and atr_value > 0
-        float tsl_atr_distance = atr_value * trl_mult
-        tsl_atr_distance := math.max(tsl_atr_distance, close * 0.005)
-
-        if tsl_method_input == TSL_METHOD_ATR_PRICE
-            float base_price = tsl_source == "close" ? close : low
-            potential_new_stop := lib.round(base_price - tsl_atr_distance, 5)
-        else if tsl_method_input == TSL_METHOD_ATR_LOWEST
-            potential_new_stop := lib.round(lowest_low_for_tsl - tsl_atr_distance, 5)
-        else if tsl_method_input == TSL_METHOD_PERCENT
-            potential_new_stop := lib.round(close * (1 - tsl_percent), 5)
-
+    // Calcular TP y BE
+    tp_price := calcTakeProfit(entry_price, atr_value)
+    be_price := calcBreakEvenLevel(entry_price, atr_value)
+    
+    // Calcular Nivel Potencial TSL
+    potential_new_stop := calcTrailingStop(close, atr_value, lowest_low_for_tsl)
+    
     // Resetear flags
     be_activated_this_bar := false
     tsl_updated_this_bar := false
-
+    
     // Actualización SL (BE / TSL)
-    if not na(long_be_price) and be_mult > 0 and not long_be_active and close > long_be_price
-        long_be_active := true
-        long_trl_active := true
-        if not na(long_entry_price)
-            float new_sl = lib.round(long_entry_price, 5)
-            if na(long_sl_price) or new_sl != long_sl_price
-                long_sl_price := new_sl
+    if not na(be_price) and be_mult > 0 and not be_active and close > be_price
+        be_active := true
+        trl_active := true
+        if not na(entry_price)
+            float new_sl = lib.round(entry_price, 5)
+            if na(sl_price) or new_sl != sl_price
+                sl_price := new_sl
                 be_activated_this_bar := true
-
-    if long_trl_active and not na(potential_new_stop) and not na(long_sl_price)
-        if potential_new_stop > long_sl_price
-            long_sl_price := potential_new_stop
+    
+    if trl_active and not na(potential_new_stop) and not na(sl_price)
+        if potential_new_stop > sl_price
+            sl_price := potential_new_stop
             tsl_updated_this_bar := true
 
 // *** CONDICIONES DE ENTRADA ***
-// Condición Trigger (Muy Restrictiva - Considera Simplificar)
-entry_trigger_condition = isLowestLowOrPrior and initial_sl_dista > 0 and adx_filter and vol_filter and not isBullish and isBelowEMA
+// Condición Trigger - Simplificada (OPTIMIZADO)
+entry_trigger_condition = isLowestLowOrPrior and initial_sl_dista > 0 and adx_filter and vol_filter and isBelowEMA
 
 // *** LÓGICA DE ENTRADA DIFERIDA ***
-// Resetear estado si la señal trigger desaparece
-if not entry_trigger_condition
+// Resetear estado si la señal trigger desaparece o expira
+if not entry_trigger_condition or (entrySignalActive and barsSinceSignal > entry_expiry_bars)
     entrySignalActive := false
-    // Mantener barsSinceSignal y lowestSinceSignal para posible re-entrada rápida si aplica
+    barsSinceSignal := 0
 
 // Activar búsqueda y rastrear mínimo cuando la señal trigger aparece
-if entry_trigger_condition and not entrySignalActive // Solo la primera vez
+if entry_trigger_condition and not entrySignalActive and not risk_limit_reached
     entrySignalActive := true
     barsSinceSignal := 0 // Resetear contador
     lowestSinceSignal := low // Empezar rastreo
@@ -228,19 +263,19 @@ if entrySignalActive
         lowestSinceSignal := low
 
 // Condición FINAL de Compra (Ejecución)
-bool reversalCandle = close > open // Ejemplo: vela verde
-bool executeBuy = entrySignalActive and barsSinceSignal >= entry_wait_bars and reversalCandle// Esperar N barras Y ver vela de reversión
+bool reversalCandle = close > open
+bool executeBuy = entrySignalActive and barsSinceSignal >= entry_wait_bars and reversalCandle and not risk_limit_reached
 
 // Permiso para Operar (can_trade)
-bool qty_is_valid     = not na(final_qty) and final_qty >= min_qty
-bool cost_is_valid    = not na(final_qty) and not na(close) and close > 0
-float estimated_cost  = cost_is_valid ? lib.round(final_qty * close, 5) : na
+bool qty_is_valid = not na(final_qty) and final_qty >= min_qty
+bool cost_is_valid = not na(final_qty) and not na(close) and close > 0
+float estimated_cost = cost_is_valid ? lib.round(final_qty * close, 5) : na
 bool equity_is_enough = not na(estimated_cost) and equity > estimated_cost
-can_trade = strategy.position_size == 0 and qty_is_valid and equity_is_enough
+can_trade = strategy.position_size == 0 and qty_is_valid and equity_is_enough and not risk_limit_reached
 
 // Ejecutar Entrada
 if executeBuy and can_trade
-    float entry_price = na
+    entry_price := na
     if order_type == 'limit'
         limit_offset = price_offset_pips * syminfo.mintick
         entry_price := limit_offset == 0 ? close : close - limit_offset
@@ -258,41 +293,48 @@ if executeBuy and can_trade
     if not na(initial_sl_price)
         strategy.entry("Compra", strategy.long, qty=final_qty, limit=entry_price)
         entrySignalActive := false // Resetear estado DESPUÉS de enviar orden
+        trades_today := trades_today + 1 // Incrementar contador diario (NUEVO)
 
         if strategy.position_size[1] == 0 // Usar [1] para verificar si NO había posición antes de esta barra
-            long_sl_price := initial_sl_price // Asignar SL inicial
-            long_tp_price := na
-            long_be_active := false
-            long_trl_active := false
+            sl_price := initial_sl_price // Asignar SL inicial
+            tp_price := na
+            be_active := false
+            trl_active := false
 
-        // Add alert for entry
-        if enable_webhook_alerts and webhook_url != ""
+        // Añadir alerta de entrada - Refactorizado usando la función
+        if enable_webhook_alerts
             string entry_alert_message = '{ "symbol": "' + syminfo.tickerid + '", "side": "buy", "qty": ' + str.tostring(final_qty) + ', "type": "' + order_type + '"'
             if order_type == 'limit'
                 entry_alert_message += ', "price": ' + str.tostring(entry_price)
             entry_alert_message += ' }'
-           // alert(entry_alert_message, alert.freq_once_per_bar_close, webhook=webhook_url)
+            if enable_webhook_alerts and webhook_url != ""
+                alert(entry_alert_message + "{{webhook=" + webhook_url + "}}")
 
 // *** CONDICIONES DE SALIDA ***
 // Salida 1: Pendiente por SL/TP/BE/TSL vía strategy.exit
-if strategy.position_size > 0 and not na(long_sl_price) and isBullish
-    float actual_limit_price = long_trl_active ? na : long_tp_price// TP Condicional
-    strategy.exit(id='Venta SL/TP', from_entry='Compra', stop=long_sl_price, limit=actual_limit_price, comment_profit='TP', comment_loss='SL/BE/TSL')
+if strategy.position_size > 0 and not na(sl_price)
+    float actual_limit_price = trl_active ? na : tp_price // TP Condicional
+    strategy.exit(id='Venta SL/TP', from_entry='Compra', stop=sl_price, limit=actual_limit_price, comment_profit='TP', comment_loss='SL/BE/TSL')
 
-    // Add alert for SL/TP/BE/TSL exit
-    if enable_webhook_alerts and webhook_url != ""
+    // Añadir alerta para salida SL/TP/BE/TSL - Refactorizado
+    if enable_webhook_alerts
         string exit_alert_message = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "SL/TP/BE/TSL" }'
-       // alert(exit_alert_message, alert.freq_once_per_bar_close, webhook=webhook_url)
+        if enable_webhook_alerts and webhook_url != ""
+            alert(exit_alert_message + "{{webhook=" + webhook_url + "}}")
 
 // Salida 2: Inmediata por Condición "Peak Exit" vía strategy.close
-if strategy.position_size > 0 and exit_peak_condition and not long_trl_active and isBullish
+if strategy.position_size > 0 and exit_peak_condition and not trl_active
     strategy.close(id='Compra', comment='Peak Exit')
 
-    // Add alert for Peak Exit
-    if enable_webhook_alerts and webhook_url != ""
+    // Añadir alerta para Peak Exit - Refactorizado
+    if enable_webhook_alerts
         string peak_exit_alert_message = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "Peak Exit" }'
-       // alert(peak_exit_alert_message, alert.freq_once_per_bar_close, webhook=webhook_url)
+        if enable_webhook_alerts and webhook_url != ""
+            alert(peak_exit_alert_message + "{{webhook=" + webhook_url + "}}")
 
 // EMA Plots
 plot(ema_value, title="EMA Corta", color=color.new(color.yellow, 0), linewidth=1)
 plot(htfEmaValue, title="EMA HTF (Non-Repaint)", color=color.new(color.aqua, 0), linewidth=1)
+
+// Indicadores de estado (NUEVO)
+bgcolor(risk_limit_reached ? color.new(color.red, 90) : na, title="Límite de Riesgo Alcanzado")

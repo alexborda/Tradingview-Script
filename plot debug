@@ -17,12 +17,19 @@ var float dbg_max_qty_allowed = na
 var float dbg_qty_after_min   = na
 var float dbg_qty_after_max   = na
 
+
+// Variables para Debug
+var float dbg_calc_qty_raw    = na
+var float dbg_max_qty_allowed = na
+var float dbg_qty_after_min   = na
+var float dbg_qty_after_max   = na
+
 if show_debug_labels
     dbg_calc_qty_raw    := calculated_qty
     dbg_max_qty_allowed := max_equity_risk / close
     dbg_qty_after_min   := qty_after_min
     dbg_qty_after_max   := qty_after_max
-    
+
 // Inputs Visuales y Depuración
 show_debug_plots   = input.bool(false, title="Ver Plots Debug?", group=G_VIS, tooltip="Activa/Desactiva la visualización de plots técnicos adicionales para depuración.")
 show_debug_labels  = input.bool(true, title="Ver Labels Debug?", group=G_VIS, tooltip="Activa/Desactiva la visualización de etiquetas con información detallada del estado y cálculos.")
