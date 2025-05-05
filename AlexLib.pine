@@ -141,3 +141,4 @@ export calcTrailingStop(float currentPrice, float atr, float lowestPrice, float 
             round(currentPrice * (1 - tsl_percent), 5)
     else
         na
+// } FIN DE DETECCIÓN DE CONFIGURACIONES DE VELA
