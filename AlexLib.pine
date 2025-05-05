@@ -1,0 +1,143 @@
+// @version=6
+library("AlexLib", overlay = false)
+
+// --- INICIO DE FUNCIONES DE UTILIDAD {
+
+// @función Calcula cuántos decimales tiene el precio de cotización del mercado actual
+// @devuelve El número actual de decimales en el precio de cotización del mercado
+export getDecimals() => 
+    float _return = math.abs(math.log(syminfo.mintick) / math.log(10))
+
+// @función Trunca (corta) los decimales excedentes
+// @param number El número a truncar
+// @param decimalPlaces (por defecto=2) El número de decimales a los que truncar
+// @devuelve El número dado truncado a los decimales especificados
+export truncate(float number, simple float decimalPlaces = 2.0) =>
+    factor = math.pow(10, decimalPlaces)
+    float _return = int(number * factor) / factor
+
+export round(float number, int decimals) =>
+    float multiplier = math.pow(10, decimals)
+    math.round(number * multiplier) / multiplier
+
+// @función Obtiene el cambio porcentual entre 2 valores float en un período de retroceso dado
+// @param value1 El primer valor a comparar
+// @param value2 El segundo valor a comparar
+// @param lookback El período de retroceso a analizar
+// @devuelve El cambio porcentual entre los dos valores y el período de retroceso
+export getPerChange(float value1, float value2, int lookback) =>
+    vChange = value1 - value2
+    vDiff   = vChange - vChange[lookback]
+    float _return = (vDiff / vChange) * 100
+
+// } FIN DE FUNCIONES DE UTILIDAD
+
+// --- INICIO DE FUNCIONES DE ANÁLISIS TÉCNICO {
+
+// @función Cuenta cuántas velas están por encima de la MA
+// @param lookback El período de retroceso a analizar
+// @param ma La media móvil a verificar
+// @devuelve El número de barras que están por encima de la MA
+export barsAboveMA(int lookback, float ma) =>
+    counter = 0
+    for i = 1 to lookback by 1
+        if close[i] > ma[i]
+            counter := counter + 1
+    int _return = counter
+
+// @función Cuenta cuántas velas están por debajo de la MA
+// @param lookback El período de retroceso a analizar
+// @param ma La media móvil a verificar
+// @devuelve El número de barras que están por debajo de la MA
+export barsBelowMA(int lookback, float ma) =>
+    counter = 0
+    for i = 1 to lookback by 1
+        if close[i] < ma[i]
+            counter := counter + 1
+    int _return = counter
+
+// @función Cuenta cuántas barras verdes y rojas se han impreso recientemente (es decir, cuenta de retrocesos)
+// @param lookback El período de retroceso a analizar
+// @param direction El color de la barra a contar (1 = Verde, -1 = Roja)
+// @devuelve El número de barras que han retrocedido en el período dado y en la dirección especificada
+export getPullbackBarCount(int lookback, int direction) =>
+    recentCandles = 0
+    for i = 1 to lookback by 1
+        if direction == 1 and close[i] > open[i]  // Contar barras verdes
+            recentCandles := recentCandles + 1
+        if direction == -1 and close[i] < open[i]  // Contar barras rojas
+            recentCandles := recentCandles + 1
+    int _return = recentCandles
+    
+// @función Obtiene el tamaño del cuerpo de la vela actual (en PUNTOS, divide entre 10 para obtener pips)
+// @devuelve El tamaño del cuerpo de la vela actual en PUNTOS
+export getBodySize() => 
+    float _return = math.abs(close - open) / syminfo.mintick
+
+// @función Obtiene el tamaño de la mecha superior de la vela actual (en PUNTOS, divide entre 10 para obtener pips)
+// @devuelve El tamaño de la mecha superior de la vela actual en PUNTOS
+export getTopWickSize() => 
+    float _return = math.abs(high - (close > open ? close : open)) / syminfo.mintick
+
+// @función Obtiene el tamaño de la mecha inferior de la vela actual (en PUNTOS, divide entre 10 para obtener pips)
+// @devuelve El tamaño de la mecha inferior de la vela actual en PUNTOS
+export getBottomWickSize() => 
+    float _return = math.abs((close < open ? close : open) - low) / syminfo.mintick
+
+// @función Obtiene el tamaño del cuerpo de la vela actual como un porcentaje de su tamaño total, incluyendo las mechas
+// @devuelve El porcentaje del tamaño del cuerpo de la vela actual
+export getBodyPercent() => 
+    float _return = math.abs(open - close) / math.abs(high - low)
+// } FIN DE FUNCIONES DE ANÁLISIS TÉCNICO
+
+// --- INICIO DE DETECCIÓN DE CONFIGURACIONES DE VELA {
+// @función Verifica si la vela actual es una envolvente alcista
+// @param allowance (por defecto=0) Cuántos PUNTOS permitir que se desvíe la apertura (útil para mercados con micro brechas)
+// @param rejectionWickSize (por defecto=deshabilitado) El tamaño máximo de la mecha de rechazo en comparación con el cuerpo como un porcentaje
+// @param engulfWick (por defecto=false) ¿La vela envolvente requiere que la mecha también sea envuelta?
+// @devuelve Un booleano - true si la vela actual coincide con los requisitos de una envolvente alcista
+export isBullishEC(float allowance = 0.0, float rejectionWickSize = 0.0, bool engulfWick = false) =>
+    bool _return = (close[1] <= open[1] and close >= open[1] and open <= close[1] + allowance) and (not engulfWick or close >= high[1]) and 
+                   (rejectionWickSize == 0.0 or getTopWickSize() / getBodySize() < rejectionWickSize)
+
+
+// @función Verifica si la vela actual es una envolvente bajista
+// @param allowance (por defecto=0) Cuántos PUNTOS permitir que se desvíe la apertura (útil para mercados con micro brechas)
+// @param rejectionWickSize (por defecto=deshabilitado) El tamaño máximo de la mecha de rechazo en comparación con el cuerpo como un porcentaje
+// @param engulfWick (por defecto=false) ¿La vela envolvente requiere que la mecha también sea envuelta?
+// @devuelve Un booleano - true si la vela actual coincide con los requisitos de una envolvente bajista
+export isBearishEC(float allowance = 0.0, float rejectionWickSize = 0.0, bool engulfWick = false) =>
+    bool _return = (close[1] >= open[1] and close <= open[1] and open >= close[1] - allowance) and (not engulfWick or close <= low[1]) and
+                   (rejectionWickSize == 0.0 or getBottomWickSize() / getBodySize() < rejectionWickSize)
+
+export calcTakeProfit(float entry, float atr, float tp_mult) =>
+    if not na(entry) and entry > 0 and not na(atr) and atr > 0
+        float tpAtrDist = atr * tp_mult
+        tpAtrDist := math.max(tpAtrDist, entry * 0.01)
+        round(entry + tpAtrDist, 5)
+    else
+        na
+
+export calcBreakEvenLevel(float entry, float atr, float be_mult) =>
+    if not na(entry) and entry > 0 and not na(atr) and atr > 0
+        float beAtrDist = atr * be_mult
+        beAtrDist := math.max(beAtrDist, entry * 0.005)
+        round(entry + beAtrDist, 5)
+    else
+        na
+
+export calcTrailingStop(float currentPrice, float atr, float lowestPrice, float trl_mult, string tsl_method_input, string TSL_METHOD_ATR_PRICE, string TSL_METHOD_ATR_LOWEST, string TSL_METHOD_PERCENT, string tsl_source, float lrTslValue, float tsl_percent) =>
+    if not na(currentPrice) and currentPrice > 0 and not na(atr) and atr > 0
+        float tslAtrDist = atr * trl_mult
+        tslAtrDist := math.max(tslAtrDist, currentPrice * 0.005)
+        
+        if tsl_method_input == TSL_METHOD_ATR_PRICE
+            float basePrice = tsl_source == "close" ? close : low
+            round(basePrice - tslAtrDist, 5)
+        else if tsl_method_input == TSL_METHOD_ATR_LOWEST
+            // Usar Regresión Lineal para TSL basado en mínimos
+            round(lowestPrice - tslAtrDist, 5)
+        else // TSL_METHOD_PERCENT
+            round(currentPrice * (1 - tsl_percent), 5)
+    else
+        na
