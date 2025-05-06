@@ -5,7 +5,7 @@ library("AlexLib", overlay = false)
 
 // @función Calcula cuántos decimales tiene el precio de cotización del mercado actual
 // @devuelve El número actual de decimales en el precio de cotización del mercado
-export getDecimals() => 
+export getDecimals() =>
     float _return = math.abs(math.log(syminfo.mintick) / math.log(10))
 
 // @función Trunca (corta) los decimales excedentes
@@ -68,25 +68,25 @@ export getPullbackBarCount(int lookback, int direction) =>
         if direction == -1 and close[i] < open[i]  // Contar barras rojas
             recentCandles := recentCandles + 1
     int _return = recentCandles
-    
+
 // @función Obtiene el tamaño del cuerpo de la vela actual (en PUNTOS, divide entre 10 para obtener pips)
 // @devuelve El tamaño del cuerpo de la vela actual en PUNTOS
-export getBodySize() => 
+export getBodySize() =>
     float _return = math.abs(close - open) / syminfo.mintick
 
 // @función Obtiene el tamaño de la mecha superior de la vela actual (en PUNTOS, divide entre 10 para obtener pips)
 // @devuelve El tamaño de la mecha superior de la vela actual en PUNTOS
-export getTopWickSize() => 
+export getTopWickSize() =>
     float _return = math.abs(high - (close > open ? close : open)) / syminfo.mintick
 
 // @función Obtiene el tamaño de la mecha inferior de la vela actual (en PUNTOS, divide entre 10 para obtener pips)
 // @devuelve El tamaño de la mecha inferior de la vela actual en PUNTOS
-export getBottomWickSize() => 
+export getBottomWickSize() =>
     float _return = math.abs((close < open ? close : open) - low) / syminfo.mintick
 
 // @función Obtiene el tamaño del cuerpo de la vela actual como un porcentaje de su tamaño total, incluyendo las mechas
 // @devuelve El porcentaje del tamaño del cuerpo de la vela actual
-export getBodyPercent() => 
+export getBodyPercent() =>
     float _return = math.abs(open - close) / math.abs(high - low)
 // } FIN DE FUNCIONES DE ANÁLISIS TÉCNICO
 
@@ -97,9 +97,8 @@ export getBodyPercent() =>
 // @param engulfWick (por defecto=false) ¿La vela envolvente requiere que la mecha también sea envuelta?
 // @devuelve Un booleano - true si la vela actual coincide con los requisitos de una envolvente alcista
 export isBullishEC(float allowance = 0.0, float rejectionWickSize = 0.0, bool engulfWick = false) =>
-    bool _return = (close[1] <= open[1] and close >= open[1] and open <= close[1] + allowance) and (not engulfWick or close >= high[1]) and 
+    bool _return = (close[1] <= open[1] and close >= open[1] and open <= close[1] + allowance) and (not engulfWick or close >= high[1]) and
                    (rejectionWickSize == 0.0 or getTopWickSize() / getBodySize() < rejectionWickSize)
-
 
 // @función Verifica si la vela actual es una envolvente bajista
 // @param allowance (por defecto=0) Cuántos PUNTOS permitir que se desvíe la apertura (útil para mercados con micro brechas)
@@ -109,6 +108,10 @@ export isBullishEC(float allowance = 0.0, float rejectionWickSize = 0.0, bool en
 export isBearishEC(float allowance = 0.0, float rejectionWickSize = 0.0, bool engulfWick = false) =>
     bool _return = (close[1] >= open[1] and close <= open[1] and open >= close[1] - allowance) and (not engulfWick or close <= low[1]) and
                    (rejectionWickSize == 0.0 or getBottomWickSize() / getBodySize() < rejectionWickSize)
+
+// } FIN DE DETECCIÓN DE CONFIGURACIONES DE VELA
+
+// --- INICIO DE FUNCIONES DE GESTIÓN DE TRADE {
 
 export calcTakeProfit(float entry, float atr, float tp_mult) =>
     if not na(entry) and entry > 0 and not na(atr) and atr > 0
@@ -126,19 +129,36 @@ export calcBreakEvenLevel(float entry, float atr, float be_mult) =>
     else
         na
 
-export calcTrailingStop(float currentPrice, float atr, float lowestPrice, float trl_mult, string tsl_method_input, string TSL_METHOD_ATR_PRICE, string TSL_METHOD_ATR_LOWEST, string TSL_METHOD_PERCENT, string tsl_source, float lrTslValue, float tsl_percent) =>
+export calcTrailingStop(float currentPrice, float atr, float trl_mult, string tsl_method_input, string tsl_source, float lrTslValue, float tsl_percent, float trendSlope) =>
     if not na(currentPrice) and currentPrice > 0 and not na(atr) and atr > 0
-        float tslAtrDist = atr * trl_mult
+        // Factor de sensibilidad para el ajuste del TSL (puede ser un input en la estrategia principal)
+        float sensitivity = 100.0 // Valor inicial, ajustar según optimización
+
+        float adjusted_trl_mult = trl_mult
+        float adjusted_tsl_percent = tsl_percent
+
+        // Ajustar multiplicador/porcentaje basado en la pendiente de la tendencia
+        if not na(trendSlope)
+            // Para ATR: reducir multiplicador en tendencias fuertes (pendiente alta)
+            adjusted_trl_mult := trl_mult * math.max(0.5, 1 - math.abs(trendSlope) * sensitivity)
+            // Para Porcentaje: aumentar porcentaje en tendencias fuertes (pendiente alta)
+            adjusted_tsl_percent := tsl_percent * math.max(1.0, 1 + math.abs(trendSlope) * sensitivity)
+
+
+        float tslAtrDist = atr * adjusted_trl_mult
         tslAtrDist := math.max(tslAtrDist, currentPrice * 0.005)
-        
-        if tsl_method_input == TSL_METHOD_ATR_PRICE
+
+        // Referenciar las constantes de método TSL desde la estrategia principal
+        if tsl_method_input == "ATR (desde Precio)" // Usar el string literal o importar las constantes si es posible
             float basePrice = tsl_source == "close" ? close : low
             round(basePrice - tslAtrDist, 5)
-        else if tsl_method_input == TSL_METHOD_ATR_LOWEST
+        else if tsl_method_input == "ATR (desde Mínimo Reciente)" // Usar el string literal
             // Usar Regresión Lineal para TSL basado en mínimos
-            round(lowestPrice - tslAtrDist, 5)
-        else // TSL_METHOD_PERCENT
-            round(currentPrice * (1 - tsl_percent), 5)
+            round(lrTslValue - tslAtrDist, 5) // Usar lrTslValue pasado como parámetro
+        else if tsl_method_input == "Porcentaje (desde Cierre)" // Usar el string literal
+            round(currentPrice * (1 - adjusted_tsl_percent), 5)
+        else // Fallback por si acaso
+            na
     else
         na
-// } FIN DE DETECCIÓN DE CONFIGURACIONES DE VELA
+// } FIN DE FUNCIONES DE GESTIÓN DE TRADE
