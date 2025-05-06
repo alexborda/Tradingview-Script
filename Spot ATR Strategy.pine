@@ -39,6 +39,10 @@ lrEntryLen      = input.int(10, "LR Entrada", group=G_ENTRY, minval=2, tooltip="
 
 // Salidas
 exitLookback    = input.int(7, "Salida Lookback", group=G_EXIT, minval=2, tooltip="Barras hacia atrás para máximo cierre en Salida Peak")
+// Inputs Lógica Entrada EMA Post-Retroceso (NUEVO)
+string G_EMA_RETR = "1.4 Lógica Entrada EMA Retroceso"
+useEmaRetrEntry = input.bool(false, title="Usar Entrada EMA Post-Retroceso", group=G_EMA_RETR, tooltip="Activar/desactivar la lógica de entrada basada en cruces de EMA después de un retroceso.")
+retrBars = input.int(5, title="Retroceso Mín Barras bajo EMA Corta", group=G_EMA_RETR, minval=1, tooltip="Número mínimo de barras consecutivas que el precio debe cerrar por debajo de la EMA corta para considerar un retroceso.")
 exitEmaBars     = input.int(5, "Min Barras s/EMA", group=G_EXIT, minval=2, tooltip="Mínimo barras sobre EMA para Salida Peak")
 exitMult        = input.float(1.0, "Exit Mult", group=G_EXIT, minval=0.1, step=0.1, tooltip="Tolerancia añadida al precio para salida")
 tpMult          = input.float(1.7, "TP Mult ATR", group=G_EXIT, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Take Profit")
@@ -124,6 +128,13 @@ bool volfilter = not useVolFilter or (volume > 0 and volRel > volFactor)
 
 // Regresión Lineal - Cálculos unificados
 float lrLow = ta.linreg(low, lrEntryLen, 0)
+// Cálculos Lógica Entrada EMA Post-Retroceso (NUEVO)
+bool trendOkEmaRetr = bullish // Precio sobre EMA HTF
+int barsBelowEmaCorta = ta.barssince(close > ema)
+bool retracementIdentified = barsBelowEmaCorta >= retrBars
+bool bullishCrossover = ta.crossover(ema, emaHTF) // EMA Corta cruza sobre EMA HTF
+
+bool emaRetrEntryCondition = useEmaRetrEntry and trendOkEmaRetr and retracementIdentified and bullishCrossover
 float lrTsl = ta.linreg(low, lrTslLen, 0)
 float lrTrend = ta.linreg(close, lrTrendLen, 0)
 float lrSlope = lrTrend - lrTrend[1]
@@ -183,28 +194,33 @@ if strategy.position_size > 0
             sl_price := new_stop
 
 // *** CONDICIONES DE ENTRADA ***
-bool entry_trigger = low <= lrLow and slDist > 0 and adxfilter and volfilter and belowEma and not bullish
+// Lógica de Entrada Original (Mínimo Reciente + Regresión Lineal + Filtros)
+bool originalEntryTrigger = low <= lrLow and slDist > 0 and adxfilter and volfilter and belowEma and not bullish
 
-// Gestión de señal de entrada
-if not entry_trigger or (entrySignal and signalBars > entryExpiryBars)
-    entrySignal := false
-    signalBars := 0
+// Lógica de Entrada Diferida (para la lógica original)
+var bool originalEntrySignalActive = false
+var int barsSinceOriginalSignal = 0
 
-// Activar búsqueda cuando aparece señal trigger
-if entry_trigger and not entrySignal and not riskLimit
-    entrySignal := true
-    signalBars := 0
-    lowestSig := low
+if not originalEntryTrigger or (originalEntrySignalActive and barsSinceOriginalSignal > entryExpiryBars)
+    originalEntrySignalActive := false
+    barsSinceOriginalSignal := 0
 
-// Si la señal está activa
-if entrySignal
-    signalBars := signalBars + 1
-    if na(lowestSig) or low < lowestSig
-        lowestSig := low
+if originalEntryTrigger and not originalEntrySignalActive and not riskLimit
+    originalEntrySignalActive := true
+    barsSinceOriginalSignal := 0 // Resetear contador
 
-// Condición de ejecución compra
-bool reversalCandle = close > open
-bool executeBuy = entrySignal and signalBars >= entryWaitBars and reversalCandle and not riskLimit
+if originalEntrySignalActive
+    barsSinceOriginalSignal := barsSinceOriginalSignal + 1 // Contar barras
+
+bool originalExecuteBuy = originalEntrySignalActive and barsSinceOriginalSignal >= entryWaitBars and reversalCandle
+
+// Lógica de Entrada EMA Post-Retroceso (NUEVO)
+// La condición emaRetrEntryCondition ya fue calculada
+
+// Condición FINAL de Compra (Ejecución)
+bool finalEntryCondition = (not useEmaRetrEntry and originalExecuteBuy) or (useEmaRetrEntry and emaRetrEntryCondition)
+
+bool executeBuy = finalEntryCondition and not riskLimit // executeBuy ahora usa la condición final y el filtro de riesgo
 
 // Verificación final para operar
 bool validQty = not na(finalQty) and finalQty >= minQty
