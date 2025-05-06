@@ -197,6 +197,7 @@ if strategy.position_size > 0
 // Lógica de Entrada Original (Mínimo Reciente + Regresión Lineal + Filtros)
 bool originalEntryTrigger = low <= lrLow and slDist > 0 and adxfilter and volfilter and belowEma and not bullish
 
+bool reversalCandle = close > open // Condición de vela de reversión (alcista)
 // Lógica de Entrada Diferida (para la lógica original)
 var bool originalEntrySignalActive = false
 var int barsSinceOriginalSignal = 0
