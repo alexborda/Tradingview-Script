@@ -8,7 +8,6 @@ strategy('Spot ATR Strategy',
 
 import alexborda/AlexLib/3 as lib
 
-// *** Optimización de inputs por grupos para mejor organización ***
 // Grupos
 string G_STRAT      = "1. Filtros Estrategia"
 string G_ENTRY      = "2. Entrada"
@@ -17,13 +16,12 @@ string G_ATR        = "4. ATR"
 string G_SIZE       = "5. Posición"
 string G_RISK       = "6. Gestión Riesgo"
 string G_VIS        = "7. Visuales"
-
+string G_EMA_RETR   = "8. Lógica Entrada EMA Retroceso"
 // Métodos TSL
 string TSL_PRICE    = "ATR (desde Precio)"
 string TSL_LOWEST   = "ATR (desde Mínimo Reciente)"
 string TSL_PERCENT  = "Porcentaje (desde Cierre)"
 
-// *** CORE INPUTS (los más importantes agrupados al inicio) ***
 // Entradas principales
 emaLen          = input.int(15, "EMA Corta", group=G_STRAT, tooltip="EMA rápida para salida y referencia a corto plazo")
 htf             = input.timeframe("D", "EMA Larga TF", group=G_STRAT, tooltip="Temporalidad de EMA lenta: 'D'=Diario, '240'=4h")
@@ -39,10 +37,9 @@ lrEntryLen      = input.int(10, "LR Entrada", group=G_ENTRY, minval=2, tooltip="
 
 // Salidas
 exitLookback    = input.int(7, "Salida Lookback", group=G_EXIT, minval=2, tooltip="Barras hacia atrás para máximo cierre en Salida Peak")
-// Inputs Lógica Entrada EMA Post-Retroceso (NUEVO)
-string G_EMA_RETR = "1.4 Lógica Entrada EMA Retroceso"
+// Inputs Lógica Entrada EMA Post-Retroceso
 useEmaRetrEntry = input.bool(false, title="Usar Entrada EMA Post-Retroceso", group=G_EMA_RETR, tooltip="Activar/desactivar la lógica de entrada basada en cruces de EMA después de un retroceso.")
-retrBars = input.int(5, title="Retroceso Mín Barras bajo EMA Corta", group=G_EMA_RETR, minval=1, tooltip="Número mínimo de barras consecutivas que el precio debe cerrar por debajo de la EMA corta para considerar un retroceso.")
+retrBars        = input.int(5, title="Retroceso Mín Barras bajo EMA Corta", group=G_EMA_RETR, minval=1, tooltip="Número mínimo de barras consecutivas que el precio debe cerrar por debajo de la EMA corta para considerar un retroceso.")
 exitEmaBars     = input.int(5, "Min Barras s/EMA", group=G_EXIT, minval=2, tooltip="Mínimo barras sobre EMA para Salida Peak")
 exitMult        = input.float(1.0, "Exit Mult", group=G_EXIT, minval=0.1, step=0.1, tooltip="Tolerancia añadida al precio para salida")
 tpMult          = input.float(1.7, "TP Mult ATR", group=G_EXIT, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Take Profit")
@@ -56,7 +53,7 @@ tslLookback     = input.int(10, "TSL Lookback", group=G_RISK, minval=2, tooltip=
 tslPct          = input.float(0.05, "TSL %", group=G_RISK, minval=0.01, maxval=1, step=0.01, tooltip="% fijo desde cierre para TSL")
 minSLPct        = input.float(0.05, "SL Mínimo %", group=G_RISK, minval=0.01, maxval=1, step=0.01, tooltip="Distancia mínima del SL en %")
 
-// Filtros avanzados (agrupados y simplificados)
+// Filtros avanzados
 useAdxFilter    = input.bool(true, "Usar ADX", group=G_STRAT, tooltip="Filtro ADX para entradas")
 adxLen          = input.int(14, "ADX Longitud", group=G_STRAT, minval=1, tooltip="Períodos para ADX")
 adxSmooth       = input.int(14, "ADX Suavizado", group=G_STRAT, minval=1, tooltip="Suavizado interno del ADX")
@@ -65,7 +62,7 @@ adxThresholdBase= input.float(15.0, "ADX Umbral", group=G_STRAT, minval=0, toolt
 useVolFilter    = input.bool(true, "Usar Volumen", group=G_STRAT, tooltip="Filtro volumen para entradas")
 volLen          = input.int(20, "Vol MA Len", group=G_STRAT, minval=1, tooltip="Períodos EMA volumen")
 volFactor       = input.float(1.1, "Vol Factor Min", group=G_STRAT, minval=0, step=0.1, tooltip="Multiplicador EMA volumen")
-reqVolConfirmExit = input.bool(true, "Vol Confirma Salida", group=G_EXIT, tooltip="Requiere volumen alto para Salida Peak")
+volConfirmExit  = input.bool(true, "Vol Confirma Salida", group=G_EXIT, tooltip="Requiere volumen alto para Salida Peak")
 
 // Regresión Lineal y gestión
 lrTslLen        = input.int(15, "LR TSL Len", group=G_RISK, minval=2, tooltip="Barras para LR en TSL")
@@ -80,35 +77,29 @@ minQty          = input.float(0.00011, "Qty Mínima", group=G_SIZE, step=0.0001,
 // Risk management
 maxDrawdownPct  = input.float(10, "Max Drawdown %", group=G_RISK, minval=1, maxval=100, step=0.1, tooltip="Máximo drawdown antes de detener operaciones")
 
-// Alertas (mínimas para enfoque en performance)
+// Alertas
 enableWebhookAlerts = input.bool(false, "Activar Webhooks", group=G_VIS)
-webhookUrl      = input.string("", "Webhook URL", group=G_VIS)
+webhookUrl          = input.string("", "Webhook URL", group=G_VIS)
 
-// *** OPTIMIZACIÓN: Variables Globales (reducidas al mínimo necesario) ***
+// *** Variables Globales ***
 var float entry_price    = na
 var float sl_price       = na
 var float tp_price       = na
 var bool  be_active      = false
 var bool  trl_active     = false
-var bool  entrySignal    = false
-var int   signalBars     = 0
 var float lowestSig      = na
 var float peakEquity     = strategy.initial_capital
 var bool  riskLimit      = false
 
-// *** OPTIMIZACIÓN: Cálculo de Indicadores (cache para evitar recálculos) ***
 // EMAs - Calculados una sola vez
 ema = ta.ema(close, emaLen)
 emaHTF = request.security(syminfo.tickerid, htf, ta.ema(close, emaLen)[1], lookahead=barmerge.lookahead_off)
 bool bullish = close > emaHTF
 
-// ATR - Optimizado con manejo de casos extremos
-float tr = ta.tr
-float atrFromTa = ta.atr(atrLen)
-float smaOfTr = ta.sma(tr, atrLen)
-float atrValue = atrFromTa
+// ATR - Optimizado
+float atrValue = ta.atr(atrLen)
 if na(atrValue) or atrValue <= 0
-    atrValue := smaOfTr
+    atrValue := ta.sma(ta.tr, atrLen)
 if na(atrValue) or atrValue <= 0
     atrValue := close * 0.02
 
@@ -128,40 +119,39 @@ bool volfilter = not useVolFilter or (volume > 0 and volRel > volFactor)
 
 // Regresión Lineal - Cálculos unificados
 float lrLow = ta.linreg(low, lrEntryLen, 0)
-// Cálculos Lógica Entrada EMA Post-Retroceso (NUEVO)
-bool trendOkEmaRetr = bullish // Precio sobre EMA HTF
+// Cálculos Lógica Entrada EMA Post-Retroceso
 int barsBelowEmaCorta = ta.barssince(close > ema)
 bool retracementIdentified = barsBelowEmaCorta >= retrBars
-bool bullishCrossover = ta.crossover(ema, emaHTF) // EMA Corta cruza sobre EMA HTF
+bool bullishCrossover = ta.crossover(ema, emaHTF)
 
-bool emaRetrEntryCondition = useEmaRetrEntry and trendOkEmaRetr and retracementIdentified and bullishCrossover
+bool emaRetrEntryCondition = useEmaRetrEntry and bullish and retracementIdentified and (close > ema)
 float lrTsl = ta.linreg(low, lrTslLen, 0)
 float lrTrend = ta.linreg(close, lrTrendLen, 0)
 float lrSlope = lrTrend - lrTrend[1]
 bool lrFilter = not useLrTrendFilter or lrSlope > 0
 
-// OPTIMIZACIÓN: Condiciones de entrada/salida calculadas una sola vez
+// Condiciones de entrada/salida calculadas una sola vez
 float lowestLow = ta.lowest(low, entryLookback) * exitMult
 bool belowEma = close < ema
 
-// Para salida peak - Optimizado en una sola operación
+// Para salida peak - Optimizado
 float highestC = ta.highest(close, exitLookback)
 bool isHighestC = close == highestC
 int barsAboveEma = ta.barssince(close <= ema)
 bool stayedAboveEma = barsAboveEma >= exitEmaBars
-bool volConfirmExit = not reqVolConfirmExit or volRel > 1.0
-bool exitPeakCond = isHighestC and stayedAboveEma and volConfirmExit
+bool volHighEnough = not volConfirmExit or volRel > 1.0
+bool exitPeakCond = isHighestC and stayedAboveEma and volHighEnough
 
 // Actualizar equity peak y calcular drawdown
 peakEquity := math.max(peakEquity, strategy.equity)
 float drawdownPct = peakEquity > 0 ? (strategy.equity - peakEquity) / peakEquity * 100 : 0.0
 riskLimit := drawdownPct <= -maxDrawdownPct
 
-// *** OPTIMIZACIÓN: Gestión de Posición ***
+// *** Gestión de Posición ***
 float equity = strategy.equity
 float maxRisk = equity * equityPct
 float calcQty = close > 0 ? maxRisk / close : 0.0
-float qty = math.max(minQty, calcQty) // Simplificado: qty debe ser al menos minQty si calcQty es válido
+float qty = math.max(minQty, calcQty)
 float finalQty = lib.round(qty, 6)
 
 // *** GESTIÓN DE TRADE (SL/TP/TSL) ***
@@ -176,7 +166,6 @@ if strategy.position_size > 0
     be_price := lib.calcBreakEvenLevel(entry_price, atrValue, beMult)
     
     // Calcular posible nuevo TSL
-    // Calcular Nivel Potencial TSL (adaptativo a la tendencia)
     new_stop := lib.calcTrailingStop(close, atrValue, tslMult, tslMethod, tslSource, lrTsl, tslPct, lrSlope)
     
     // Activar BE
@@ -194,34 +183,8 @@ if strategy.position_size > 0
             sl_price := new_stop
 
 // *** CONDICIONES DE ENTRADA ***
-// Lógica de Entrada Original (Mínimo Reciente + Regresión Lineal + Filtros)
-bool originalEntryTrigger = low <= lrLow and slDist > 0 and adxfilter and volfilter and belowEma and not bullish
-
-bool reversalCandle = close > open // Condición de vela de reversión (alcista)
-// Lógica de Entrada Diferida (para la lógica original)
-var bool originalEntrySignalActive = false
-var int barsSinceOriginalSignal = 0
-
-if not originalEntryTrigger or (originalEntrySignalActive and barsSinceOriginalSignal > entryExpiryBars)
-    originalEntrySignalActive := false
-    barsSinceOriginalSignal := 0
-
-if originalEntryTrigger and not originalEntrySignalActive and not riskLimit
-    originalEntrySignalActive := true
-    barsSinceOriginalSignal := 0 // Resetear contador
-
-if originalEntrySignalActive
-    barsSinceOriginalSignal := barsSinceOriginalSignal + 1 // Contar barras
-
-bool originalExecuteBuy = originalEntrySignalActive and barsSinceOriginalSignal >= entryWaitBars and reversalCandle
-
-// Lógica de Entrada EMA Post-Retroceso (NUEVO)
-// La condición emaRetrEntryCondition ya fue calculada
-
-// Condición FINAL de Compra (Ejecución)
-bool finalEntryCondition = (not useEmaRetrEntry and originalExecuteBuy) or (useEmaRetrEntry and emaRetrEntryCondition)
-
-bool executeBuy = finalEntryCondition and not riskLimit // executeBuy ahora usa la condición final y el filtro de riesgo
+bool finalEntryCondition = emaRetrEntryCondition and (low <= lrLow)
+bool executeBuy = finalEntryCondition and not riskLimit
 
 // Verificación final para operar
 bool validQty = not na(finalQty) and finalQty >= minQty
@@ -229,7 +192,7 @@ bool validCost = not na(finalQty) and not na(close) and close > 0
 float estCost = validCost ? lib.round(finalQty * close, 5) : na
 bool enoughEquity = not na(estCost) and equity > estCost
 
-bool canTrade = strategy.position_size == 0 and validQty and enoughEquity and not riskLimit and lrFilter
+bool canTrade = strategy.position_size == 0 and validQty and enoughEquity and not riskLimit and lrFilter and adxfilter and volfilter and bullish
 
 // EJECUCIÓN DE ENTRADA
 if executeBuy and canTrade
@@ -237,6 +200,8 @@ if executeBuy and canTrade
     if order_type == 'limit'
         float limitOffset = priceOffsetPips * syminfo.mintick
         entry_price_exec := lib.round(limitOffset == 0 ? close : close - limitOffset, 5)
+    else
+        entry_price_exec := na  // Para órdenes market
     
     float initial_sl = na
     if not na(close) and not na(slDist)
@@ -246,7 +211,6 @@ if executeBuy and canTrade
 
     if not na(initial_sl)
         strategy.entry("Compra", strategy.long, qty=finalQty, limit=entry_price_exec)
-        entrySignal := false
 
         if strategy.position_size[1] == 0
             sl_price := initial_sl
@@ -256,28 +220,25 @@ if executeBuy and canTrade
 
         // Alerta de entrada
         if enableWebhookAlerts and webhookUrl != ""
-            string entryMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "buy", "qty": ' + str.tostring(finalQty) + ', "type": "' + order_type + '"'
-            if order_type == 'limit'
-                entryMsg += ', "price": ' + str.tostring(entry_price_exec)
-            entryMsg += ' }'
+            string entryMsg = str.format('{ "symbol": "{}", "side": "buy", "qty": {}, "type": "{}"{} }', syminfo.tickerid, str.tostring(finalQty), order_type, order_type == 'limit' ? str.format(', "price": {}', str.tostring(entry_price_exec)) : '')
             alert(entryMsg + "{{webhook=" + webhookUrl + "}}")
 
 // *** CONDICIONES DE SALIDA ***
 // Salida SL/TP/BE/TSL
-if strategy.position_size > 0 and not na(sl_price) and bullish
+if strategy.position_size > 0 and not na(sl_price)
     float limit_price = trl_active ? na : tp_price
     strategy.exit(id='Venta SL/TP', from_entry='Compra', stop=sl_price, limit=limit_price, comment_profit='TP', comment_loss='SL/BE/TSL')
     // Alerta salida SL/TP/BE/TSL
     if enableWebhookAlerts and webhookUrl != ""
-        string exitMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "SL/TP/BE/TSL" }' 
+        string exitMsg = str.format('{ "symbol": "{}", "side": "sell", "qty": {}, "type": "market", "reason": "SL/TP/BE/TSL" }', syminfo.tickerid, str.tostring(strategy.position_size))
         alert(exitMsg + "{{webhook=" + webhookUrl + "}}")
 
 // Salida Peak Exit
-if strategy.position_size > 0 and exitPeakCond and not trl_active and bullish
+if strategy.position_size > 0 and exitPeakCond and not trl_active
     strategy.close(id='Compra', comment='Peak Exit')
     // Alerta Peak Exit
     if enableWebhookAlerts and webhookUrl != ""
-        string peakExitMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "Peak Exit" }'
+        string peakExitMsg = str.format('{ "symbol": "{}", "side": "sell", "qty": {}, "type": "market", "reason": "Peak Exit" }', syminfo.tickerid, str.tostring(strategy.position_size))
         alert(peakExitMsg + "{{webhook=" + webhookUrl + "}}")
 
 // *** VISUALIZACIÓN ***
@@ -285,9 +246,10 @@ if strategy.position_size > 0 and exitPeakCond and not trl_active and bullish
 plot(ema, "EMA Corta", color.new(color.yellow, 0), 1)
 plot(emaHTF, "EMA HTF", color.new(color.aqua, 0), 1)
 
-// Estado de riesgo
-plotchar(entrySignal, title="Entry Signal Active", char='S', color=color.green, location=location.belowbar)
-plotchar(signalBars >= entryWaitBars, title="Wait Bars Met", char='W', color=color.green, location=location.abovebar)
-plotchar(canTrade, title="Can Trade", char='C', color=color.blue, location=location.abovebar)
-plotchar(trl_active, title="TSL Active", char='T', color=color.orange, location=location.abovebar)
-bgcolor(riskLimit ? color.new(color.red, 90) : na, title="Límite Riesgo")
+// Stop Loss
+plot(strategy.position_size > 0 ? sl_price : na, "Stop Loss", color.new(color.red, 0), 2, plot.style_cross)
+// Take Profit
+plot(strategy.position_size > 0 and not trl_active ? tp_price : na, "Take Profit", color.new(color.green, 0), 2, plot.style_cross)
+
+// Plots de análisis (útiles durante el desarrollo)
+plot(lrLow, "LR Low", color.new(#d438f0, 23), 1, plot.style_line)

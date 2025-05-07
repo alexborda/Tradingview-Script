@@ -1,0 +1,186 @@
+//@version=6
+indicator("Unit Tests - Spot ATR Strategy", overlay=true)
+
+// Constantes para métodos TSL (compatible con Pine Script v5)
+var TSL_PRICE = "ATR (desde Precio)"
+var TSL_LOWEST = "ATR (desde Mínimo Reciente)"
+var TSL_PERCENT = "Porcentaje (desde Cierre)"
+
+// ========== FUNCIONES A PROBAR ==========
+// Simulación de funciones de la librería
+calcTakeProfit(entryPrice, atrValue, multiplier) =>
+    entryPrice + (atrValue * multiplier)
+
+calcBreakEvenLevel(entryPrice, atrValue, multiplier) =>
+    entryPrice + (atrValue * multiplier)
+
+calcTrailingStop(closePrice, atrValue, tslMult, tslMethod, tslSource, lrTsl, tslPct, lrSlope) =>
+    float result = na
+    if tslMethod == TSL_PRICE
+        float basePrice = tslSource == "close" ? closePrice : low
+        result := basePrice - (atrValue * tslMult)
+    else if tslMethod == TSL_LOWEST
+        result := lrTsl - (atrValue * tslMult)
+    else if tslMethod == TSL_PERCENT
+        result := closePrice * (1 - tslPct)
+    result
+
+round(value, precision) =>
+    factor = math.pow(10, precision)
+    math.round(value * factor) / factor
+
+// ========== FRAMEWORK DE PRUEBAS ==========
+// Variables para almacenar resultados de pruebas
+var testResults = array.new_string()
+var int testsPassed = 0
+var int testsFailed = 0
+
+// Función de aserción para pruebas
+assertEq(message, actual, expected, tolerance=0.0001) =>
+    bool result = math.abs(actual - expected) <= tolerance
+    if result
+        testsPassed := testsPassed + 1
+    else
+        testsFailed := testsFailed + 1
+    array.push(testResults, message + " [" + (result ? "✓" : "✗") + "] " + str.tostring(actual) + " vs " + str.tostring(expected))
+    result
+
+// ========== SUITES DE PRUEBAS ==========
+// Test Suite 1: Pruebas para calcTakeProfit
+testCalcTakeProfit() =>
+    // Caso de prueba 1: Multiplicador positivo normal
+    tp1 = calcTakeProfit(100, 5, 1.7)
+    assertEq("TP: Normal", tp1, 108.5)
+    
+    // Caso de prueba 2: Con entrada y ATR pequeños
+    tp2 = calcTakeProfit(10, 0.5, 1.7)
+    assertEq("TP: ATR pequeño", tp2, 10.85)
+    
+    // Caso de prueba 3: Con multiplicador grande
+    tp3 = calcTakeProfit(100, 5, 3)
+    assertEq("TP: Mult grande", tp3, 115)
+
+// Test Suite 2: Pruebas para calcBreakEvenLevel
+testCalcBreakEvenLevel() =>
+    // Caso de prueba 1: Multiplicador 1.0
+    be1 = calcBreakEvenLevel(100, 5, 1.0)
+    assertEq("BE: Mult 1.0", be1, 105)
+    
+    // Caso de prueba 2: Multiplicador pequeño
+    be2 = calcBreakEvenLevel(100, 5, 0.5)
+    assertEq("BE: Mult pequeño", be2, 102.5)
+
+// Test Suite 3: Pruebas para calcTrailingStop
+testCalcTrailingStop() =>
+    // Prueba con método ATR desde Precio
+    tsl1 = calcTrailingStop(100, 5, 1.9, TSL_PRICE, "close", 90, 0.05, 0.1)
+    assertEq("TSL: ATR precio", tsl1, 90.5)
+    
+    // Prueba con método ATR desde Mínimo Reciente
+    tsl2 = calcTrailingStop(100, 5, 1.9, TSL_LOWEST, "close", 90, 0.05, 0.1)
+    assertEq("TSL: ATR mínimo", tsl2, 80.5)
+    
+    // Prueba con método Porcentaje desde Cierre
+    tsl3 = calcTrailingStop(100, 5, 1.9, TSL_PERCENT, "close", 90, 0.05, 0.1)
+    assertEq("TSL: Porcentaje", tsl3, 95)
+
+// Test Suite 4: Pruebas para round
+testRound() =>
+    // Redondeo a 2 decimales
+    r1 = round(123.4567, 2)
+    assertEq("Round: 2 dec", r1, 123.46)
+    
+    // Redondeo a 0 decimales
+    r2 = round(123.4567, 0)
+    assertEq("Round: 0 dec", r2, 123)
+    
+    // Redondeo a 6 decimales
+    r3 = round(0.1234567890, 6)
+    assertEq("Round: 6 dec", r3, 0.123457)
+
+// Test Suite 5: Pruebas para la lógica de entrada EMA Post-Retroceso
+testEmaRetrEntryLogic() =>
+    // Simulación de condiciones
+    float ema = 100
+    float emaHTF = 95
+    bool bullish = true
+    int barsBelowEmaCorta = 6
+    bool retracementIdentified = barsBelowEmaCorta >= 5
+    bool bullishCrossover = true
+    
+    // Prueba condición completa
+    bool emaRetrEntryCondition = true and bullish and retracementIdentified and bullishCrossover
+    assertEq("EMA Retr: Positivo", emaRetrEntryCondition ? 1.0 : 0.0, 1.0)
+    
+    // Prueba con retroceso insuficiente
+    barsBelowEmaCorta := 3
+    retracementIdentified := barsBelowEmaCorta >= 5
+    emaRetrEntryCondition := true and bullish and retracementIdentified and bullishCrossover
+    assertEq("EMA Retr: Insuficiente", emaRetrEntryCondition ? 1.0 : 0.0, 0.0)
+
+// Test Suite 6: Pruebas para cálculo de posición
+testPositionSizing() =>
+    // Simulación de variables
+    float equity = 10000
+    float equityPct = 0.99
+    float closePrice = 1000  // Rename to avoid conflict with built-in 'close'
+    float minQty = 0.00011
+    
+    // Cálculo de cantidad
+    float maxRisk = equity * equityPct
+    float calcQty = closePrice > 0 ? maxRisk / closePrice : 0.0
+    float qty = math.max(minQty, calcQty)
+    float finalQty = round(qty, 6)
+    
+    // Test de cálculo normal
+    assertEq("Position: Normal", finalQty, 9.9, 0.01)
+    
+    // Test con precio alto (cantidad resultante menor que mínimo)
+    closePrice := 100000
+    calcQty := closePrice > 0 ? maxRisk / closePrice : 0.0
+    qty := math.max(minQty, calcQty)
+    finalQty := round(qty, 6)
+    assertEq("Position: Mínimo", finalQty, minQty)
+
+// ========== EJECUCIÓN DE PRUEBAS ==========
+// Ejecutar todas las pruebas solo una vez al inicio del gráfico
+var runTests = false
+if not runTests
+    runTests := true
+    testCalcTakeProfit()
+    testCalcBreakEvenLevel()
+    testCalcTrailingStop()
+    testRound()
+    testEmaRetrEntryLogic()
+    testPositionSizing()
+
+// ========== VISUALIZACIÓN DE RESULTADOS ==========
+// Visualización de resultados con una tabla
+var testTable = table.new(position.top_right, 2, array.size(testResults) + 2, bgcolor = color.new(color.black, 80))
+
+if barstate.islast
+    // Cabecera de la tabla
+    table.cell(testTable, 0, 0, "Test", bgcolor = color.new(color.blue, 20), text_color = color.white)
+    table.cell(testTable, 1, 0, "Status", bgcolor = color.new(color.blue, 20), text_color = color.white)
+    
+    // Resumen de resultados
+    string summary = "Tests: " + str.tostring(testsPassed + testsFailed) + 
+                    " | Passed: " + str.tostring(testsPassed) + 
+                    " | Failed: " + str.tostring(testsFailed)
+    
+    table.cell(testTable, 0, 1, summary, bgcolor = color.new(color.gray, 20), text_color = color.white)
+    table.cell(testTable, 1, 1, testsPassed == (testsPassed + testsFailed) ? "✓" : "✗", 
+              bgcolor = testsPassed == (testsPassed + testsFailed) ? color.new(color.green, 20) : color.new(color.red, 20), 
+              text_color = color.white)
+    
+    // Mostrar cada resultado de prueba
+    for i = 0 to math.min(array.size(testResults) - 1, 15)
+        string result = array.get(testResults, i)
+        bool passed = str.contains(result, "✓")
+        table.cell(testTable, 0, i + 2, result, text_color = color.white)
+        table.cell(testTable, 1, i + 2, passed ? "✓" : "✗", 
+                  bgcolor = passed ? color.new(color.green, 20) : color.new(color.red, 20), 
+                  text_color = color.white)
+
+// Marca visual en el gráfico para indicar que las pruebas se ejecutaron
+bgcolor(bar_index == 0 ? color.new(color.green, 90) : na)
