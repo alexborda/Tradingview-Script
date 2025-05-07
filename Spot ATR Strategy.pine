@@ -6,7 +6,7 @@ strategy('Spot ATR Strategy',
      slippage=1,
      initial_capital=10000)
 
-import alexborda/AlexLib/3 as lib
+import alexborda/AlexLib/4 as lib
 
 // Grupos
 string G_STRAT      = "1. Filtros Estrategia"
@@ -97,9 +97,12 @@ emaHTF = request.security(syminfo.tickerid, htf, ta.ema(close, emaLen)[1], looka
 bool bullish = close > emaHTF
 
 // ATR - Optimizado
-float atrValue = ta.atr(atrLen)
+float tr            = ta.tr
+float atr_from_ta   = ta.atr(atrLen)
+float sma_of_tr     = ta.sma(tr, atrLen)
+float atrValue     = atr_from_ta
 if na(atrValue) or atrValue <= 0
-    atrValue := ta.sma(ta.tr, atrLen)
+    atrValue := sma_of_tr
 if na(atrValue) or atrValue <= 0
     atrValue := close * 0.02
 
@@ -252,4 +255,4 @@ plot(strategy.position_size > 0 ? sl_price : na, "Stop Loss", color.new(color.re
 plot(strategy.position_size > 0 and not trl_active ? tp_price : na, "Take Profit", color.new(color.green, 0), 2, plot.style_cross)
 
 // Plots de análisis (útiles durante el desarrollo)
-plot(lrLow, "LR Low", color.new(#d438f0, 23), 1, plot.style_line)
+plot(lrLow, "LR Low", color.new(#d438f0, 23), 1, plot.style_line)   
