@@ -12,13 +12,42 @@ export getDecimals() =>
 // @param number El número a truncar
 // @param decimalPlaces (por defecto=2) El número de decimales a los que truncar
 // @devuelve El número dado truncado a los decimales especificados
-export truncate(float number, simple float decimalPlaces = 2.0) =>
-    factor = math.pow(10, decimalPlaces)
-    float _return = int(number * factor) / factor
+export getAppropriateDecimals(float value, int min_decimals = 2, int max_decimals = 8) =>
+    // Primero determinamos los decimales del símbolo actual
+    sym_decimals = int(getDecimals())
+    
+    // Si el valor es muy pequeño, podemos necesitar más precisión
+    // Calculamos cuántos decimales se necesitan para representar el valor significativamente
+    significant_decimals = 0
+    if value != 0
+        significant_decimals := int(math.max(0, -math.floor(math.log10(math.abs(value)))))
+    
+    // Calculamos el número final de decimales, teniendo en cuenta los límites
+    int _return = math.min(max_decimals, math.max(min_decimals, math.max(sym_decimals, significant_decimals)))
 
-export round(float number, int decimals) =>
+// @función Redondea adaptativamente un número basado en su magnitud y el instrumento
+// @param number El número a redondear
+// @param min_decimals (por defecto=2) El número mínimo de decimales a usar
+// @param max_decimals (por defecto=8) El número máximo de decimales a considerar
+// @devuelve El número redondeado con precisión apropiada
+
+export round(float number, int min_decimals = 2, int max_decimals = 8) =>
+    // Determinamos la cantidad apropiada de decimales
+    decimals = getAppropriateDecimals(number, min_decimals, max_decimals)
     float multiplier = math.pow(10, decimals)
-    math.round(number * multiplier) / multiplier
+    float _return = math.round(number * multiplier) / multiplier
+
+// @función Trunca adaptativamente un número basado en su magnitud y el instrumento
+// @param number El número a truncar
+// @param min_decimals (por defecto=2) El número mínimo de decimales a usar
+// @param max_decimals (por defecto=8) El número máximo de decimales a considerar
+// @devuelve El número truncado con precisión apropiada
+export truncate(float number, int min_decimals = 2, int max_decimals = 8) =>
+    // Determinamos la cantidad apropiada de decimales
+    decimals = getAppropriateDecimals(number, min_decimals, max_decimals)
+    // Aplicamos el truncado
+    factor = math.pow(10, decimals)
+    float _return = int(number * factor) / factor
 
 // @función Obtiene el cambio porcentual entre 2 valores float en un período de retroceso dado
 // @param value1 El primer valor a comparar
@@ -117,18 +146,16 @@ export calcTakeProfit(float entry, float atr, float tp_mult) =>
     if not na(entry) and entry > 0 and not na(atr) and atr > 0
         float tpAtrDist = atr * tp_mult
         tpAtrDist := math.max(tpAtrDist, entry * 0.01)
-        round(entry + tpAtrDist, 5)
+        round(entry + tpAtrDist, 2, 8)
     else
         na
-
 export calcBreakEvenLevel(float entry, float atr, float be_mult) =>
     if not na(entry) and entry > 0 and not na(atr) and atr > 0
         float beAtrDist = atr * be_mult
         beAtrDist := math.max(beAtrDist, entry * 0.005)
-        round(entry + beAtrDist, 5)
+        round(entry + beAtrDist, 2, 8)
     else
         na
-
 export calcTrailingStop(float currentPrice, float atr, float trl_mult, string tsl_method_input, string tsl_source, float lrTslValue, float tsl_percent, float trendSlope) =>
     if not na(currentPrice) and currentPrice > 0 and not na(atr) and atr > 0
         // Factor de sensibilidad para el ajuste del TSL (puede ser un input en la estrategia principal)
@@ -151,14 +178,15 @@ export calcTrailingStop(float currentPrice, float atr, float trl_mult, string ts
         // Referenciar las constantes de método TSL desde la estrategia principal
         if tsl_method_input == "ATR (desde Precio)" // Usar el string literal o importar las constantes si es posible
             float basePrice = tsl_source == "close" ? close : low
-            round(basePrice - tslAtrDist, 5)
+            round(basePrice - tslAtrDist, 2, 8)
         else if tsl_method_input == "ATR (desde Mínimo Reciente)" // Usar el string literal
             // Usar Regresión Lineal para TSL basado en mínimos
-            round(lrTslValue - tslAtrDist, 5) // Usar lrTslValue pasado como parámetro
+            round(lrTslValue - tslAtrDist, 2, 8) // Usar lrTslValue pasado como parámetro
         else if tsl_method_input == "Porcentaje (desde Cierre)" // Usar el string literal
-            round(currentPrice * (1 - adjusted_tsl_percent), 5)
+            round(currentPrice * (1 - adjusted_tsl_percent), 2, 8)
         else // Fallback por si acaso
             na
     else
         na
+
 // } FIN DE FUNCIONES DE GESTIÓN DE TRADE

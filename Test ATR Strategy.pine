@@ -42,12 +42,9 @@ lrTslLen        = input.int(15, "LR TSL Len", group=G_STRAT, minval=2, tooltip="
 
 
 // 2. Entrada
-entryLookback   = input.int(7, "Entrada Lookback", group=G_ENTRY, minval=2, tooltip="Barras hacia atrás para encontrar mínimo")
-
 // 3. Salida
 exitLookback    = input.int(7, "Salida Lookback", group=G_EXIT, minval=2, tooltip="Barras hacia atrás para máximo cierre en Salida Peak")
 exitEmaBars     = input.int(5, "Min Barras s/EMA", group=G_EXIT, minval=2, tooltip="Mínimo barras sobre EMA para Salida Peak")
-exitMult        = input.float(1.0, "Exit Mult", group=G_EXIT, minval=0.1, step=0.1, tooltip="Tolerancia añadida al precio para salida")
 tpMult          = input.float(1.7, "TP Mult ATR", group=G_EXIT, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Take Profit")
 beMult          = input.float(1.0, "BE Mult ATR", group=G_EXIT, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Break-Even")
 volConfirmExit  = input.bool(true, "Vol Confirma Salida", group=G_EXIT, tooltip="Requiere volumen alto para Salida Peak")
@@ -64,7 +61,6 @@ minQty          = input.float(0.00011, "Qty Mínima", group=G_SIZE, step=0.0001,
 tslMethod       = input.string(TSL_PRICE, "TSL Método", options=[TSL_PRICE, TSL_LOWEST, TSL_PERCENT], group=G_RISK, tooltip="Metodo del TSL con para método ATR")
 tslSource       = input.string("close", "TSL Fuente", options=["close", "low"], group=G_RISK, tooltip="Base para TSL con método ATR Precio")
 tslMult         = input.float(1.9, "TSL Mult ATR", group=G_RISK, minval=0.1, step=0.1, tooltip="Multiplicador ATR para TSL")
-tslLookback     = input.int(10, "TSL Lookback", group=G_RISK, minval=2, tooltip="Barras para buscar mínimo en TSL")
 tslPct          = input.float(0.05, "TSL %", group=G_RISK, minval=0.01, maxval=1, step=0.01, tooltip="% fijo desde cierre para TSL")
 minSLPct        = input.float(0.05, "SL Mínimo %", group=G_RISK, minval=0.01, maxval=1, step=0.01, tooltip="Distancia mínima del SL en %")
 order_type      = input.string("limit", "Tipo Orden", options=["limit", "market"], group=G_RISK)
@@ -123,9 +119,7 @@ float lrLow = ta.linreg(low, lrEntryLen, 0)
 // Cálculos Lógica Entrada EMA Post-Retroceso
 int barsBelowEmaCorta = ta.barssince(close > ema)
 bool retracementIdentified = barsBelowEmaCorta >= retrBars
-bool bullishCrossover = ta.crossover(ema, emaHTF)
 
-bool emaRetrEntryCondition = bullish and retracementIdentified and ta.crossover(close, ema)
 float lrTsl = ta.linreg(low, lrTslLen, 0)
 float lrTrend = ta.linreg(close, lrLen, 0)
 float lrSlope = lrTrend - lrTrend[1]
@@ -183,8 +177,7 @@ if strategy.position_size > 0
             sl_price := new_stop
 
 // *** CONDICIONES DE ENTRADA ***
-bool finalEntryCondition = emaRetrEntryCondition and (low <= lrLow)
-bool executeBuy = finalEntryCondition
+bool executeBuy = (bullish and retracementIdentified and ta.crossover(close, ema)) and (low <= lrLow)
 
 // Verificación final para operar
 bool validQty = not na(finalQty) and finalQty >= minQty
