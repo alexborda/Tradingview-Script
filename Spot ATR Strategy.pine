@@ -155,7 +155,7 @@ float equity = strategy.equity
 float maxRisk = equity * equityPct
 float calcQty = close > 0 ? maxRisk / close : 0.0
 float qty = math.max(minQty, calcQty)
-float finalQty = lib.round(qty, 6)
+float finalQty = lib.round(qty, 2, 8)
 
 // *** GESTIÓN DE TRADE (SL/TP/TSL) ***
 float be_price = na
@@ -176,7 +176,7 @@ if strategy.position_size > 0
         be_active := true
         trl_active := true
         if not na(entry_price)
-            float be_sl = lib.round(entry_price, 5)
+            float be_sl = lib.round(entry_price, 2, 8)
             if na(sl_price) or be_sl != sl_price
                 sl_price := be_sl
     
@@ -192,7 +192,7 @@ bool executeBuy = finalEntryCondition and not riskLimit
 // Verificación final para operar
 bool validQty = not na(finalQty) and finalQty >= minQty
 bool validCost = not na(finalQty) and not na(close) and close > 0
-float estCost = validCost ? lib.round(finalQty * close, 5) : na
+float estCost = validCost ? lib.round(finalQty * close, 2, 8) : na
 bool enoughEquity = not na(estCost) and equity > estCost
 
 bool canTrade = strategy.position_size == 0 and validQty and enoughEquity and not riskLimit and lrFilter and adxfilter and volfilter and bullish
