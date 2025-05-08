@@ -38,9 +38,8 @@ lrEntryLen      = input.int(10, "LR Entrada", group=G_ENTRY, minval=2, tooltip="
 // Salidas
 exitLookback    = input.int(7, "Salida Lookback", group=G_EXIT, minval=2, tooltip="Barras hacia atrás para máximo cierre en Salida Peak")
 // Inputs Lógica Entrada EMA Post-Retroceso
-useEmaRetrEntry = input.bool(false, title="Usar Entrada EMA Post-Retroceso", group=G_EMA_RETR, tooltip="Activar/desactivar la lógica de entrada basada en cruces de EMA después de un retroceso.")
-retrBars        = input.int(5, title="Retroceso Mín Barras bajo EMA Corta", group=G_EMA_RETR, minval=1, tooltip="Número mínimo de barras consecutivas que el precio debe cerrar por debajo de la EMA corta para considerar un retroceso.")
 exitEmaBars     = input.int(5, "Min Barras s/EMA", group=G_EXIT, minval=2, tooltip="Mínimo barras sobre EMA para Salida Peak")
+retrBars = input.int(5, title="Retroceso Mín Barras bajo EMA Corta", group=G_EMA_RETR, minval=1, tooltip="Número mínimo de barras consecutivas que el precio debe cerrar por debajo de la EMA corta para considerar un retroceso.")
 exitMult        = input.float(1.0, "Exit Mult", group=G_EXIT, minval=0.1, step=0.1, tooltip="Tolerancia añadida al precio para salida")
 tpMult          = input.float(1.7, "TP Mult ATR", group=G_EXIT, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Take Profit")
 beMult          = input.float(1.0, "BE Mult ATR", group=G_EXIT, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Break-Even")
@@ -120,22 +119,15 @@ float volAvg = useVolFilter ? ta.ema(volume, volLen) : na
 float volRel = volAvg > 0 ? volume / volAvg : 0
 bool volfilter = not useVolFilter or (volume > 0 and volRel > volFactor)
 
-// Regresión Lineal - Cálculos unificados
-float lrLow = ta.linreg(low, lrEntryLen, 0)
 // Cálculos Lógica Entrada EMA Post-Retroceso
 int barsBelowEmaCorta = ta.barssince(close > ema)
-bool retracementIdentified = barsBelowEmaCorta >= retrBars
-bool bullishCrossover = ta.crossover(ema, emaHTF)
 
-bool emaRetrEntryCondition = useEmaRetrEntry and bullish and retracementIdentified and (close > ema)
-float lrTsl = ta.linreg(low, lrTslLen, 0)
-float lrTrend = ta.linreg(close, lrTrendLen, 0)
-float lrSlope = lrTrend - lrTrend[1]
-bool lrFilter = not useLrTrendFilter or lrSlope > 0
-
-// Condiciones de entrada/salida calculadas una sola vez
-float lowestLow = ta.lowest(low, entryLookback) * exitMult
-bool belowEma = close < ema
+// Regresión Lineal - Cálculos unificados
+float lrLow     = ta.linreg(low, lrEntryLen, 0)
+float lrTsl     = ta.linreg(low, lrTslLen, 0)
+float lrTrend   = ta.linreg(close, lrTrendLen, 0)
+float lrSlope   = lrTrend - lrTrend[1]
+bool lrFilter   = not useLrTrendFilter or lrSlope > 0
 
 // Para salida peak - Optimizado
 float highestC = ta.highest(close, exitLookback)
@@ -186,8 +178,7 @@ if strategy.position_size > 0
             sl_price := new_stop
 
 // *** CONDICIONES DE ENTRADA ***
-bool finalEntryCondition = emaRetrEntryCondition and (low <= lrLow)
-bool executeBuy = finalEntryCondition and not riskLimit
+bool executeBuy = (barsBelowEmaCorta >= retrBars and (close > ema))
 
 // Verificación final para operar
 bool validQty = not na(finalQty) and finalQty >= minQty
@@ -197,7 +188,6 @@ bool enoughEquity = not na(estCost) and equity > estCost
 
 bool canTrade = strategy.position_size == 0 and validQty and enoughEquity and not riskLimit and lrFilter and adxfilter and volfilter and bullish
 
-// EJECUCIÓN DE ENTRADA
 if executeBuy and canTrade
     float entry_price_exec = na
     if order_type == 'limit'
@@ -223,7 +213,10 @@ if executeBuy and canTrade
 
         // Alerta de entrada
         if enableWebhookAlerts and webhookUrl != ""
-            string entryMsg = str.format('{ "symbol": "{}", "side": "buy", "qty": {}, "type": "{}"{} }', syminfo.tickerid, str.tostring(finalQty), order_type, order_type == 'limit' ? str.format(', "price": {}', str.tostring(entry_price_exec)) : '')
+            string entryMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "buy", "qty": ' + str.tostring(finalQty) + ', "type": "' + order_type + '"'
+            if order_type == 'limit'
+                entryMsg := entryMsg + ', "price": ' + str.tostring(entry_price_exec)
+            entryMsg := entryMsg + ' }'
             alert(entryMsg + "{{webhook=" + webhookUrl + "}}")
 
 // *** CONDICIONES DE SALIDA ***
@@ -233,7 +226,7 @@ if strategy.position_size > 0 and not na(sl_price)
     strategy.exit(id='Venta SL/TP', from_entry='Compra', stop=sl_price, limit=limit_price, comment_profit='TP', comment_loss='SL/BE/TSL')
     // Alerta salida SL/TP/BE/TSL
     if enableWebhookAlerts and webhookUrl != ""
-        string exitMsg = str.format('{ "symbol": "{}", "side": "sell", "qty": {}, "type": "market", "reason": "SL/TP/BE/TSL" }', syminfo.tickerid, str.tostring(strategy.position_size))
+        string exitMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "SL/TP/BE/TSL" }'
         alert(exitMsg + "{{webhook=" + webhookUrl + "}}")
 
 // Salida Peak Exit
@@ -241,7 +234,7 @@ if strategy.position_size > 0 and exitPeakCond and not trl_active
     strategy.close(id='Compra', comment='Peak Exit')
     // Alerta Peak Exit
     if enableWebhookAlerts and webhookUrl != ""
-        string peakExitMsg = str.format('{ "symbol": "{}", "side": "sell", "qty": {}, "type": "market", "reason": "Peak Exit" }', syminfo.tickerid, str.tostring(strategy.position_size))
+        string peakExitMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "Peak Exit" }'
         alert(peakExitMsg + "{{webhook=" + webhookUrl + "}}")
 
 // *** VISUALIZACIÓN ***
@@ -255,4 +248,23 @@ plot(strategy.position_size > 0 ? sl_price : na, "Stop Loss", color.new(color.re
 plot(strategy.position_size > 0 and not trl_active ? tp_price : na, "Take Profit", color.new(color.green, 0), 2, plot.style_cross)
 
 // Plots de análisis (útiles durante el desarrollo)
-plot(lrLow, "LR Low", color.new(#d438f0, 23), 1, plot.style_line)   
+plot(lrLow, "LR Low", color.new(#d438f0, 23), 1, plot.style_line)
+
+// Plots de Depuración (activar/desactivar según necesidad)
+plot_executeBuy = input.bool(false, "Plot executeBuy", group="Debug Plots")
+plotshape(plot_executeBuy and executeBuy, title="Execute Buy", style=shape.triangleup, location=location.bottom, color=color.new(color.green, 0), size=size.small)
+
+plot_canTrade = input.bool(false, "Plot canTrade", group="Debug Plots")
+plotshape(plot_canTrade and canTrade, title="Can Trade", style=shape.triangledown, location=location.top, color=color.new(color.blue, 0), size=size.small)
+
+plot_lrFilter = input.bool(false, "Plot lrFilter", group="Debug Plots")
+bgcolor(plot_lrFilter and lrFilter ? color.new(color.purple, 90) : na, title="LR Filter")
+
+plot_adxfilter = input.bool(false, "Plot adxfilter", group="Debug Plots")
+bgcolor(plot_adxfilter and adxfilter ? color.new(color.orange, 90) : na, title="ADX Filter")
+
+plot_volfilter = input.bool(false, "Plot volfilter", group="Debug Plots")
+bgcolor(plot_volfilter and volfilter ? color.new(color.teal, 90) : na, title="Vol Filter")
+
+plot_bullish = input.bool(false, "Plot bullish", group="Debug Plots")
+// bgcolor(plot_bullish and bullish ? color.new(color.lime, 90) : na, title="Bullish Filter") // bullish variable removed
