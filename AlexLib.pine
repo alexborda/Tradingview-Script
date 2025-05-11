@@ -4,6 +4,7 @@ library("AlexLib", overlay = false)
 export getDecimals() =>
     math.abs(math.log(syminfo.mintick) / math.log(10))
 
+<<<<<<< HEAD
 export getAppropriateDecimals(float val, int minDec = 2, int maxDec = 8) =>
     symDec = int(getDecimals())
     significantDec = 0
@@ -20,6 +21,53 @@ export truncate(float num, int minDec = 2, int maxDec = 8) =>
     dec = getAppropriateDecimals(num, minDec, maxDec)
     factor = math.pow(10, dec)
     int(num * factor) / factor
+=======
+// @función Calcula cuántos decimales tiene el precio de cotización del mercado actual
+// @devuelve El número actual de decimales en el precio de cotización del mercado
+export getDecimals() =>
+    float _return = math.abs(math.log(syminfo.mintick) / math.log(10))
+
+// @función Trunca (corta) los decimales excedentes
+// @param number El número a truncar
+// @param decimalPlaces (por defecto=2) El número de decimales a los que truncar
+// @devuelve El número dado truncado a los decimales especificados
+export getAppropriateDecimals(float value, int min_decimals = 2, int max_decimals = 8) =>
+    // Primero determinamos los decimales del símbolo actual
+    sym_decimals = int(getDecimals())
+    
+    // Si el valor es muy pequeño, podemos necesitar más precisión
+    // Calculamos cuántos decimales se necesitan para representar el valor significativamente
+    significant_decimals = 0
+    if value != 0
+        significant_decimals := int(math.max(0, -math.floor(math.log10(math.abs(value)))))
+    
+    // Calculamos el número final de decimales, teniendo en cuenta los límites
+    int _return = math.min(max_decimals, math.max(min_decimals, math.max(sym_decimals, significant_decimals)))
+
+// @función Redondea adaptativamente un número basado en su magnitud y el instrumento
+// @param number El número a redondear
+// @param min_decimals (por defecto=2) El número mínimo de decimales a usar
+// @param max_decimals (por defecto=8) El número máximo de decimales a considerar
+// @devuelve El número redondeado con precisión apropiada
+
+export round(float number, int min_decimals = 2, int max_decimals = 8) =>
+    // Determinamos la cantidad apropiada de decimales
+    decimals = getAppropriateDecimals(number, min_decimals, max_decimals)
+    float multiplier = math.pow(10, decimals)
+    float _return = math.round(number * multiplier) / multiplier
+
+// @función Trunca adaptativamente un número basado en su magnitud y el instrumento
+// @param number El número a truncar
+// @param min_decimals (por defecto=2) El número mínimo de decimales a usar
+// @param max_decimals (por defecto=8) El número máximo de decimales a considerar
+// @devuelve El número truncado con precisión apropiada
+export truncate(float number, int min_decimals = 2, int max_decimals = 8) =>
+    // Determinamos la cantidad apropiada de decimales
+    decimals = getAppropriateDecimals(number, min_decimals, max_decimals)
+    // Aplicamos el truncado
+    factor = math.pow(10, decimals)
+    float _return = int(number * factor) / factor
+>>>>>>> b8945e1b7ee74a13a86066b9844334fca62ca83d
 
 export getPercentChange(float val1, float val2, int lookback) => // Renombrado
     vChange = val1 - val2
@@ -43,6 +91,7 @@ export countBarsBelowMA(int lookback, float ma) => // Renombrado
 export countPullbackBars(int lookback, int direction) => // Renombrado
     candles = 0
     for i = 1 to lookback by 1
+<<<<<<< HEAD
         if direction == 1 and close[i] > open[i]
             candles := candles + 1
         if direction == -1 and close[i] < open[i]
@@ -175,3 +224,103 @@ export validateLR(series float src, int len, bool useFilter = true) => // Nombre
             passes := false // Longitud inválida o 'src' es na
     
     [passes, lrSlope]
+=======
+        if direction == 1 and close[i] > open[i]  // Contar barras verdes
+            recentCandles := recentCandles + 1
+        if direction == -1 and close[i] < open[i]  // Contar barras rojas
+            recentCandles := recentCandles + 1
+    int _return = recentCandles
+
+// @función Obtiene el tamaño del cuerpo de la vela actual (en PUNTOS, divide entre 10 para obtener pips)
+// @devuelve El tamaño del cuerpo de la vela actual en PUNTOS
+export getBodySize() =>
+    float _return = math.abs(close - open) / syminfo.mintick
+
+// @función Obtiene el tamaño de la mecha superior de la vela actual (en PUNTOS, divide entre 10 para obtener pips)
+// @devuelve El tamaño de la mecha superior de la vela actual en PUNTOS
+export getTopWickSize() =>
+    float _return = math.abs(high - (close > open ? close : open)) / syminfo.mintick
+
+// @función Obtiene el tamaño de la mecha inferior de la vela actual (en PUNTOS, divide entre 10 para obtener pips)
+// @devuelve El tamaño de la mecha inferior de la vela actual en PUNTOS
+export getBottomWickSize() =>
+    float _return = math.abs((close < open ? close : open) - low) / syminfo.mintick
+
+// @función Obtiene el tamaño del cuerpo de la vela actual como un porcentaje de su tamaño total, incluyendo las mechas
+// @devuelve El porcentaje del tamaño del cuerpo de la vela actual
+export getBodyPercent() =>
+    float _return = math.abs(open - close) / math.abs(high - low)
+// } FIN DE FUNCIONES DE ANÁLISIS TÉCNICO
+
+// --- INICIO DE DETECCIÓN DE CONFIGURACIONES DE VELA {
+// @función Verifica si la vela actual es una envolvente alcista
+// @param allowance (por defecto=0) Cuántos PUNTOS permitir que se desvíe la apertura (útil para mercados con micro brechas)
+// @param rejectionWickSize (por defecto=deshabilitado) El tamaño máximo de la mecha de rechazo en comparación con el cuerpo como un porcentaje
+// @param engulfWick (por defecto=false) ¿La vela envolvente requiere que la mecha también sea envuelta?
+// @devuelve Un booleano - true si la vela actual coincide con los requisitos de una envolvente alcista
+export isBullishEC(float allowance = 0.0, float rejectionWickSize = 0.0, bool engulfWick = false) =>
+    bool _return = (close[1] <= open[1] and close >= open[1] and open <= close[1] + allowance) and (not engulfWick or close >= high[1]) and
+                   (rejectionWickSize == 0.0 or getTopWickSize() / getBodySize() < rejectionWickSize)
+
+// @función Verifica si la vela actual es una envolvente bajista
+// @param allowance (por defecto=0) Cuántos PUNTOS permitir que se desvíe la apertura (útil para mercados con micro brechas)
+// @param rejectionWickSize (por defecto=deshabilitado) El tamaño máximo de la mecha de rechazo en comparación con el cuerpo como un porcentaje
+// @param engulfWick (por defecto=false) ¿La vela envolvente requiere que la mecha también sea envuelta?
+// @devuelve Un booleano - true si la vela actual coincide con los requisitos de una envolvente bajista
+export isBearishEC(float allowance = 0.0, float rejectionWickSize = 0.0, bool engulfWick = false) =>
+    bool _return = (close[1] >= open[1] and close <= open[1] and open >= close[1] - allowance) and (not engulfWick or close <= low[1]) and
+                   (rejectionWickSize == 0.0 or getBottomWickSize() / getBodySize() < rejectionWickSize)
+
+// } FIN DE DETECCIÓN DE CONFIGURACIONES DE VELA
+
+// --- INICIO DE FUNCIONES DE GESTIÓN DE TRADE {
+
+export calcTakeProfit(float entry, float atr, float tp_mult) =>
+    if not na(entry) and entry > 0 and not na(atr) and atr > 0
+        float tpAtrDist = atr * tp_mult
+        tpAtrDist := math.max(tpAtrDist, entry * 0.01)
+        round(entry + tpAtrDist, 2, 8)
+    else
+        na
+export calcBreakEvenLevel(float entry, float atr, float be_mult) =>
+    if not na(entry) and entry > 0 and not na(atr) and atr > 0
+        float beAtrDist = atr * be_mult
+        beAtrDist := math.max(beAtrDist, entry * 0.005)
+        round(entry + beAtrDist, 2, 8)
+    else
+        na
+export calcTrailingStop(float currentPrice, float atr, float trl_mult, string tsl_method_input, string tsl_source, float lrTslValue, float tsl_percent, float trendSlope) =>
+    if not na(currentPrice) and currentPrice > 0 and not na(atr) and atr > 0
+        // Factor de sensibilidad para el ajuste del TSL (puede ser un input en la estrategia principal)
+        float sensitivity = 100.0 // Valor inicial, ajustar según optimización
+
+        float adjusted_trl_mult = trl_mult
+        float adjusted_tsl_percent = tsl_percent
+
+        // Ajustar multiplicador/porcentaje basado en la pendiente de la tendencia
+        if not na(trendSlope)
+            // Para ATR: reducir multiplicador en tendencias fuertes (pendiente alta)
+            adjusted_trl_mult := trl_mult * math.max(0.5, 1 - math.abs(trendSlope) * sensitivity)
+            // Para Porcentaje: aumentar porcentaje en tendencias fuertes (pendiente alta)
+            adjusted_tsl_percent := tsl_percent * math.max(1.0, 1 + math.abs(trendSlope) * sensitivity)
+
+
+        float tslAtrDist = atr * adjusted_trl_mult
+        tslAtrDist := math.max(tslAtrDist, currentPrice * 0.005)
+
+        // Referenciar las constantes de método TSL desde la estrategia principal
+        if tsl_method_input == "ATR (desde Precio)" // Usar el string literal o importar las constantes si es posible
+            float basePrice = tsl_source == "close" ? close : low
+            round(basePrice - tslAtrDist, 2, 8)
+        else if tsl_method_input == "ATR (desde Mínimo Reciente)" // Usar el string literal
+            // Usar Regresión Lineal para TSL basado en mínimos
+            round(lrTslValue - tslAtrDist, 2, 8) // Usar lrTslValue pasado como parámetro
+        else if tsl_method_input == "Porcentaje (desde Cierre)" // Usar el string literal
+            round(currentPrice * (1 - adjusted_tsl_percent), 2, 8)
+        else // Fallback por si acaso
+            na
+    else
+        na
+
+// } FIN DE FUNCIONES DE GESTIÓN DE TRADE
+>>>>>>> b8945e1b7ee74a13a86066b9844334fca62ca83d

@@ -1,0 +1,252 @@
+//@version=6
+strategy('Spot ATR Strategy', 
+     overlay=true,
+     commission_type=strategy.commission.percent,
+     commission_value=0.1,
+     slippage=1,
+     initial_capital=10000)
+
+import alexborda/AlexLib/4 as lib
+
+// Grupos
+string G_STRAT      = "1. Filtros Estrategia"
+string G_ENTRY      = "2. Entrada"
+string G_EXIT       = "3. Salida"
+string G_ATR        = "4. ATR"
+string G_SIZE       = "5. Posición"
+string G_RISK       = "6. Gestión Riesgo"
+string G_VIS        = "7. Visuales"
+string G_EMA_RETR   = "8. Lógica Entrada EMA Retroceso"
+// Métodos TSL
+string TSL_PRICE    = "ATR (desde Precio)"
+string TSL_LOWEST   = "ATR (desde Mínimo Reciente)"
+string TSL_PERCENT  = "Porcentaje (desde Cierre)"
+
+
+// *** Inputs ***
+
+// 1. Filtros Estrategia
+emaLen          = input.int(15, "EMA Corta", group=G_STRAT, tooltip="EMA rápida para salida y referencia a corto plazo")
+htf             = input.timeframe("D", "EMA Larga TF", group=G_STRAT, tooltip="Temporalidad de EMA lenta: 'D'=Diario, '240'=4h")
+useAdxFilter    = input.bool(true, "Usar ADX", group=G_STRAT, tooltip="Filtro ADX para entradas")
+adxLen          = input.int(14, "ADX Longitud", group=G_STRAT, minval=1, tooltip="Períodos para ADX")
+adxSmooth       = input.int(14, "ADX Suavizado", group=G_STRAT, minval=1, tooltip="Suavizado interno del ADX")
+adxUmbral       = input.float(15.0, "ADX Umbral", group=G_STRAT, minval=0, tooltip="Nivel mínimo base ADX")
+useVolFilter    = input.bool(true, "Usar Volumen", group=G_STRAT, tooltip="Filtro volumen para entradas")
+volLen          = input.int(20, "Vol MA Len", group=G_STRAT, minval=1, tooltip="Períodos EMA volumen")
+volFactor       = input.float(1.1, "Vol Factor Min", group=G_STRAT, minval=0, step=0.1, tooltip="Multiplicador EMA volumen")
+useLrFilter     = input.bool(true, "Usar Regrecion Lineal", group=G_STRAT, tooltip="Usar filtro tendencia con LR")
+lrLen           = input.int(20, "LR Tendencia Len", group=G_STRAT, minval=2, tooltip="Barras para LR como filtro tendencia")
+lrEntryLen      = input.int(10, "LR Entrada", group=G_STRAT, minval=2, tooltip="Barras para Regresión Lineal en entrada")
+lrTslLen        = input.int(15, "LR TSL Len", group=G_STRAT, minval=2, tooltip="Barras para LR en TSL")
+
+
+// 2. Entrada
+// 3. Salida
+exitLookback    = input.int(7, "Salida Lookback", group=G_EXIT, minval=2, tooltip="Barras hacia atrás para máximo cierre en Salida Peak")
+exitEmaBars     = input.int(5, "Min Barras s/EMA", group=G_EXIT, minval=2, tooltip="Mínimo barras sobre EMA para Salida Peak")
+tpMult          = input.float(1.7, "TP Mult ATR", group=G_EXIT, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Take Profit")
+beMult          = input.float(1.0, "BE Mult ATR", group=G_EXIT, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Break-Even")
+volConfirmExit  = input.bool(true, "Vol Confirma Salida", group=G_EXIT, tooltip="Requiere volumen alto para Salida Peak")
+
+// 4. ATR
+atrLen          = input.int(14, "ATR Longitud", group=G_ATR, tooltip="Períodos para Average True Range")
+atrMultSL       = input.float(1.2, "ATR Mult SL", group=G_ATR, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Stop Loss")
+
+// 5. Posición
+equityPct       = input.float(0.99, "% Capital x Trade", group=G_SIZE, minval=0.01, maxval=1, step=0.01, tooltip="% del capital por operación")
+minQty          = input.float(0.00011, "Qty Mínima", group=G_SIZE, step=0.0001, minval=0.00011, tooltip="Cantidad mínima permitida por exchange")
+
+// 6. Gestión Riesgo
+tslMethod       = input.string(TSL_PRICE, "TSL Método", options=[TSL_PRICE, TSL_LOWEST, TSL_PERCENT], group=G_RISK, tooltip="Metodo del TSL con para método ATR")
+tslSource       = input.string("close", "TSL Fuente", options=["close", "low"], group=G_RISK, tooltip="Base para TSL con método ATR Precio")
+tslMult         = input.float(1.9, "TSL Mult ATR", group=G_RISK, minval=0.1, step=0.1, tooltip="Multiplicador ATR para TSL")
+tslPct          = input.float(0.05, "TSL %", group=G_RISK, minval=0.01, maxval=1, step=0.01, tooltip="% fijo desde cierre para TSL")
+minSLPct        = input.float(0.05, "SL Mínimo %", group=G_RISK, minval=0.01, maxval=1, step=0.01, tooltip="Distancia mínima del SL en %")
+order_type      = input.string("limit", "Tipo Orden", options=["limit", "market"], group=G_RISK)
+priceOffsetPips = input.int(5, "Limit Offset Pips", group=G_RISK, minval=0, tooltip="Pips por debajo del precio actual para órdenes límite")
+maxDrawdownPct  = input.float(10, "Max Drawdown %", group=G_RISK, minval=1, maxval=100, step=0.1, tooltip="Máximo drawdown antes de detener operaciones")
+
+// 7. Visuales
+enableWebhookAlerts = input.bool(true, "Activar Webhooks", group=G_VIS)
+webhookUrl          = input.string("", "Webhook URL", group=G_VIS)
+
+// 8. Lógica Entrada EMA Retroceso
+retrBars        = input.int(5, title="Retroceso Mín Barras bajo EMA Corta", group=G_EMA_RETR, minval=1, tooltip="Número mínimo de barras consecutivas que el precio debe cerrar por debajo de la EMA corta para considerar un retroceso.")
+
+
+// *** Variables Globales ***
+var float entryPrice     = na
+var float sl_price       = na
+var float tp_price       = na
+var bool  be_active      = false
+var bool  trl_active     = false
+var float lowestSig      = na
+var float peakEquity     = strategy.initial_capital
+var bool  riskLimit      = false
+
+// EMAs - Calculados una sola vez
+ema = ta.ema(close, emaLen)
+emaHTF = request.security(syminfo.tickerid, htf, ta.ema(close, emaLen)[1], lookahead=barmerge.lookahead_off)
+bool bullish = close > emaHTF
+
+// ATR - Optimizado
+float tr            = ta.tr
+float atr_from_ta   = ta.atr(atrLen)
+float sma_of_tr     = ta.sma(tr, atrLen)
+float atrValue     = atr_from_ta
+if na(atrValue) or atrValue <= 0
+    atrValue := sma_of_tr
+if na(atrValue) or atrValue <= 0
+    atrValue := close * 0.02
+
+// Distancia SL con mínimo configurable
+float slDist = math.max(atrValue * atrMultSL, close * (minSLPct/100))
+
+// ADX - Solo se calcula si es necesario
+[di_plus, di_minus, adx] = ta.dmi(adxLen, adxSmooth)
+float volatilityFactor = close > 0 ? atrValue / close : 0
+float adxThreshold = adxUmbral * (1 + volatilityFactor)
+bool adxfilter = not useAdxFilter or (adx > adxThreshold)
+
+// Volumen - Solo se calcula si es necesario
+float volAvg = useVolFilter ? ta.ema(volume, volLen) : na
+float volRel = volAvg > 0 ? volume / volAvg : 0
+bool volfilter = not useVolFilter or (volume > 0 and volRel > volFactor)
+
+// Regresión Lineal - Cálculos unificados
+float lrLow = ta.linreg(low, lrEntryLen, 0)
+// Cálculos Lógica Entrada EMA Post-Retroceso
+int barsBelowEmaCorta = ta.barssince(close > ema)
+bool retracementIdentified = barsBelowEmaCorta >= retrBars
+
+float lrTsl = ta.linreg(low, lrTslLen, 0)
+float lrTrend = ta.linreg(close, lrLen, 0)
+float lrSlope = lrTrend - lrTrend[1]
+bool lrFilter = not useLrFilter or lrSlope > 0
+
+// Condiciones de entrada/salida calculadas una sola vez
+bool belowEma = close < ema
+
+// Para salida peak - Optimizado
+float highestC = ta.highest(close, exitLookback)
+bool isHighestC = close == highestC
+int barsAboveEma = ta.barssince(close <= ema)
+bool stayedAboveEma = barsAboveEma >= exitEmaBars
+bool volHighEnough = not volConfirmExit or volRel > 1.0
+bool exitPeakCond = isHighestC and stayedAboveEma and volHighEnough
+
+// Actualizar equity peak y calcular drawdown
+peakEquity := math.max(peakEquity, strategy.equity)
+float drawdownPct = peakEquity > 0 ? (strategy.equity - peakEquity) / peakEquity * 100 : 0.0
+riskLimit := drawdownPct <= -maxDrawdownPct
+
+// *** Gestión de Posición ***
+float equity = strategy.equity
+float maxRisk = equity * equityPct
+float calcQty = close > 0 ? maxRisk / close : 0.0
+float qty = math.max(minQty, calcQty)
+float finalQty = lib.round(qty, 6)
+
+// *** GESTIÓN DE TRADE (SL/TP/TSL) ***
+float be_price = na
+float new_stop = na
+
+if strategy.position_size > 0
+    entryPrice := strategy.position_avg_price
+    
+    // Calcular niveles clave
+    tp_price := lib.calcTakeProfit(entryPrice, atrValue, tpMult)
+    be_price := lib.calcBreakEvenLevel(entryPrice, atrValue, beMult)
+    
+    // Calcular posible nuevo TSL
+    new_stop := lib.calcTrailingStop(close, atrValue, tslMult, tslMethod, tslSource, lrTsl, tslPct, lrSlope)
+    
+    // Activar BE
+    if not na(be_price) and beMult > 0 and not be_active and close > be_price
+        be_active := true
+        trl_active := true
+        if not na(entryPrice)
+            float be_sl = lib.round(entryPrice, 5)
+            if na(sl_price) or be_sl != sl_price
+                sl_price := be_sl
+    
+    // Actualizar TSL
+    if trl_active and not na(new_stop) and not na(sl_price)
+        if new_stop > sl_price
+            sl_price := new_stop
+
+// *** CONDICIONES DE ENTRADA ***
+bool executeBuy = (bullish and retracementIdentified and ta.crossover(close, ema)) and (low <= lrLow)
+
+// Verificación final para operar
+bool validQty = not na(finalQty) and finalQty >= minQty
+bool validCost = not na(finalQty) and not na(close) and close > 0
+float estCost = validCost ? lib.round(finalQty * close, 5) : na
+bool enoughEquity = not na(estCost) and equity > estCost
+
+bool canTrade = strategy.position_size == 0 and validQty and enoughEquity and not riskLimit and lrFilter and adxfilter and volfilter
+
+// EJECUCIÓN DE ENTRADA
+if executeBuy and canTrade
+    float entryPrice_exec = na
+    if order_type == 'limit'
+        float limitOffset = priceOffsetPips * syminfo.mintick
+        entryPrice_exec := lib.round(limitOffset == 0 ? close : close - limitOffset, 5)
+    else
+        entryPrice_exec := na  // Para órdenes market
+    
+    float initial_sl = na
+    if not na(close) and not na(slDist)
+        float entry_est = order_type == 'limit' ? entryPrice_exec : close
+        if not na(entry_est)
+            initial_sl := lib.round(entry_est - slDist, 5)
+
+    if not na(initial_sl)
+        strategy.entry("Compra", strategy.long, qty=finalQty, limit=entryPrice_exec)
+
+        if strategy.position_size[1] == 0
+            sl_price := initial_sl
+            tp_price := na
+            be_active := false
+            trl_active := false
+
+        // Alerta de entrada
+        if enableWebhookAlerts and webhookUrl != ""
+            string entryMsg = ""
+            if order_type == 'limit'
+                entryMsg := '{ "symbol": "' + syminfo.tickerid + '", "side": "buy", "qty": ' + str.tostring(finalQty) + ', "type": "' + order_type + '", "price": ' + str.tostring(entryPrice_exec) + ' }'
+            else
+                entryMsg := '{ "symbol": "' + syminfo.tickerid + '", "side": "buy", "qty": ' + str.tostring(finalQty) + ', "type": "' + order_type + '" }'
+            alert(entryMsg + "{{webhook=" + webhookUrl + "}}")
+
+// *** CONDICIONES DE SALIDA ***
+// Salida SL/TP/BE/TSL
+if strategy.position_size > 0 and not na(sl_price)
+    float limit_price = trl_active ? na : tp_price
+    strategy.exit(id='Venta SL/TP', from_entry='Compra', stop=sl_price, limit=limit_price, comment_profit='TP', comment_loss='SL/BE/TSL')
+    // Alerta salida SL/TP/BE/TSL
+    if enableWebhookAlerts and webhookUrl != ""
+        string exitMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "SL/TP/BE/TSL" }'
+        alert(exitMsg + "{{webhook=" + webhookUrl + "}}")
+
+// Salida Peak Exit
+if strategy.position_size > 0 and exitPeakCond and not trl_active
+    strategy.close(id='Compra', comment='Peak Exit')
+    // Alerta Peak Exit
+    if enableWebhookAlerts and webhookUrl != ""
+        string peakExitMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "Peak Exit" }'
+        alert(peakExitMsg + "{{webhook=" + webhookUrl + "}}")
+
+// *** VISUALIZACIÓN ***
+// EMAs
+plot(ema, "EMA Corta", color.new(color.yellow, 0), 1)
+plot(emaHTF, "EMA HTF", color.new(color.aqua, 0), 1)
+
+// Stop Loss
+plot(strategy.position_size > 0 ? sl_price : na, "Stop Loss", color.new(color.red, 0), 2, plot.style_cross)
+// Take Profit
+plot(strategy.position_size > 0 and not trl_active ? tp_price : na, "Take Profit", color.new(color.green, 0), 2, plot.style_cross)
+
+// Plots de análisis (útiles durante el desarrollo)
+plot(lrLow, "LR Low", color.new(#d438f0, 23), 1, plot.style_line)

@@ -278,7 +278,3 @@ bgcolor(plot_volfilter and useVolFilter ? color.new(color.teal, 90) : na, title=
 
 plot_bullish = input.bool(false, "Plot bullish", group="Debug Plots")
 // bgcolor(plot_bullish and bullish ? color.new(color.lime, 90) : na, title="Bullish Filter") // bullish variable removed
-
-plot_peakExit = input.bool(false, "Plot peakExit", group="Debug Plots")
-bgcolor(plot_peakExit and peakExitCond ? color.new(color.red, 90) : na, title="Peak Exit")
-plot_peakExitEma = input.bool(false, "Plot peakExitEma", group="Debug Plots")   
