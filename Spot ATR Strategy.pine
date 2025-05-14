@@ -130,8 +130,8 @@ float lrSlope   = lrTrend - lrTrend[1]
 bool lrFilter   = not useLrTrendFilter or lrSlope > 0
 
 // Para salida peak - Optimizado
-float highestC = ta.highest(close, exitLookback)
-bool isHighestC = close == highestC
+float highestClose = ta.highest(close, exitLookback)
+bool isHighestClose = close == highestClose
 int barsAboveEma = ta.barssince(close <= ema)
 bool stayedAboveEma = barsAboveEma >= exitEmaBars
 bool volHighEnough = not volConfirmExit or volRel > 1.0
@@ -200,6 +200,26 @@ if executeBuy and strategy.position_size == 0 and validQty and enoughEquity and 
         float entry_est = order_type == 'limit' ? entry_price_exec : close
         if not na(entry_est)
             initial_sl := lib.round(entry_est - slDist, 2, 8)
+bool entryTrigger = (barsBelowShortEma >= retrBars and crossoverShortEma) and isBullish and slDist > 0 and adxPass and volPass and lrPass
+
+// *** LÓGICA DE ENTRADA ***
+bool qtyOk     = not na(finalPositionQty) and finalPositionQty >= minQty
+bool costOk    = not na(finalPositionQty) and not na(close) and close > 0
+float estCostVal  = costOk ? lib.round(finalPositionQty * close, 2, 5) : na
+bool equityOk = not na(estCostVal) and equity > estCostVal
+bool canEnterTrade = strategy.position_size == 0 and qtyOk and equityOk and not riskLimitReached
+
+// *** EJECUTAR ENTRADA ***
+if entryTrigger and canEnterTrade
+    float entryPriceExec = na
+    if orderType == 'limit'
+        float limitOffsetVal = priceOffsetPips * syminfo.mintick
+        entryPriceExec := lib.round((limitOffsetVal == 0 ? close : close - limitOffsetVal), 2, 5)
+
+    float initialSl = na
+    float slBasePrice = orderType == 'limit' ? (not na(entryPriceExec) ? entryPriceExec : close) : close
+    if not na(slBasePrice) and not na(slDist)
+        initialSl := lib.round(slBasePrice - slDist, 2, 5)
 
     if not na(initial_sl)
         strategy.entry("Compra", strategy.long, qty=finalQty, limit=entry_price_exec)
