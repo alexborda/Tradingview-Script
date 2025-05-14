@@ -186,9 +186,8 @@ bool validCost = not na(finalQty) and not na(close) and close > 0
 float estCost = validCost ? lib.round(finalQty * close, 2, 8) : na
 bool enoughEquity = not na(estCost) and equity > estCost
 
-bool canTrade = strategy.position_size == 0 and validQty and enoughEquity and not riskLimit and lrFilter and adxfilter and volfilter and bullish
 
-if executeBuy and canTrade
+if executeBuy and strategy.position_size == 0 and validQty and enoughEquity and not riskLimit
     float entry_price_exec = na
     if order_type == 'limit'
         float limitOffset = priceOffsetPips * syminfo.mintick
@@ -255,7 +254,7 @@ plot_executeBuy = input.bool(false, "Plot executeBuy", group="Debug Plots")
 plotshape(plot_executeBuy and executeBuy, title="Execute Buy", style=shape.triangleup, location=location.bottom, color=color.new(color.green, 0), size=size.small)
 
 plot_canTrade = input.bool(false, "Plot canTrade", group="Debug Plots")
-plotshape(plot_canTrade and canTrade, title="Can Trade", style=shape.triangledown, location=location.top, color=color.new(color.blue, 0), size=size.small)
+// plotshape(plot_canTrade and canTrade, title="Can Trade", style=shape.triangledown, location=location.top, color=color.new(color.blue, 0), size=size.small) // canTrade variable removed
 
 plot_lrFilter = input.bool(false, "Plot lrFilter", group="Debug Plots")
 bgcolor(plot_lrFilter and lrFilter ? color.new(color.purple, 90) : na, title="LR Filter")
