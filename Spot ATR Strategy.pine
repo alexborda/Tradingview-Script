@@ -1,94 +1,98 @@
 //@version=6
-strategy('Spot ATR Strategy', 
+strategy('Spot ATR Strategy', // Nombre actualizado
      overlay=true,
      commission_type=strategy.commission.percent,
      commission_value=0.1,
      slippage=1,
      initial_capital=10000)
 
-import alexborda/AlexLib/12 as lib
+// --- Importar librería Personal (ASEGÚRATE QUE LOS DATOS SEAN CORRECTOS) ---
+import alexborda/AlexLib/1 as lib
 
-// --- Grupos de Inputs ---
-string G_STRAT = "1. Filtros Estrategia"
-string G_ENTRY = "2. Lógica Entrada"
-string G_EXIT  = "3. Lógica Salida Peak"
-string G_ATR   = "4. Configuración ATR"
-string G_SIZE  = "5. Tamaño Posición"
-string G_RISK  = "6. Gestión Riesgo & TSL"
-string G_ORD   = "7. Configuración Órdenes"
-string G_VIS   = "8. Visuales y Depuración"
-string TSL_PRICE    = "ATR (desde Precio)"
-string TSL_LOWEST   = "ATR (desde Mínimo Reciente)"
-string TSL_PERCENT  = "Porcentaje (desde Cierre)"
+// *** Inputs de Estrategia ***
+// Grupos
+string G_STRAT = "1. Filtros de Estrategia"
+string G_ENTRYEXIT = "1.1 Lógica Entrada/Salida"
+string G_ADX = "1.2 Filtro ADX"
+string G_VOL = "1.3 Filtro Volumen"
+string G_ATR = "2. Configuración ATR"
+string G_SIZE = "3. Tamaño de Posición"
+string G_MGMT = "4. Gestión Trade & TSL" // Grupo renombrado
+string G_ORD = "5. Configuración de Órdenes"
+string G_VIS = "6. Visuales y Depuración"
 
-// Inputs Filtros Estrategia
-emaLen          = input.int(15, "EMA Corta", group=G_STRAT, minval=1, tooltip="EMA rápida para salida y referencia a corto plazo")
-htf             = input.timeframe("240", "EMA Larga TF", group=G_STRAT, tooltip="Temporalidad de EMA lenta: 'D'=Diario, '240'=4h")
-useAdxFilter    = input.bool(true, "Usar ADX", group=G_STRAT, tooltip="Filtro ADX para entradas")
-adxLen          = input.int(14, "ADX Longitud", group=G_STRAT, minval=1, tooltip="Períodos para ADX")
-adxSmooth       = input.int(14, "ADX Suavizado", group=G_STRAT, minval=1, tooltip="Suavizado interno del ADX")
-adxThresholdBase= input.float(15.0, "ADX Umbral Base", group=G_STRAT, minval=0, tooltip="Nivel mínimo base ADX")
-useVolFilter    = input.bool(true, "Usar Volumen", group=G_STRAT, tooltip="Filtro volumen para entradas")
-volLen          = input.int(20, "Vol MA Len", group=G_STRAT, minval=1, tooltip="Períodos EMA volumen")
-volFactor       = input.float(1.1, "Vol Factor Min", group=G_STRAT, minval=0, step=0.1, tooltip="Multiplicador EMA volumen")
-useLrTrendFilter= input.bool(false, "Filtro LR Tendencia", group=G_STRAT, tooltip="Usar filtro tendencia con LR")
-lrTrendLen      = input.int(20, "LR Tendencia Len", group=G_STRAT, minval=2, tooltip="Barras para LR como filtro tendencia")
+// Inputs Filtros de Estrategia
+ema_length         = input.int(10, title="EMA Corta Longitud", group=G_STRAT, minval=1, tooltip="Período de la Media Móvil Exponencial (EMA) rápida, usada para lógica de salida y como referencia de corto plazo.")
+HigherTimeframe    = input.timeframe("D", title="EMA Larga TF", group=G_STRAT, tooltip="Temporalidad de la EMA lenta (largo plazo) para filtrar tendencia general (ej. 'D'=Diario, '240'=4 Horas). La entrada solo ocurre si el precio está sobre esta EMA.")
 
-// Inputs Lógica Entrada
-retrBars        = input.int(5, title="Retroceso Mín Barras bajo EMA Corta", group=G_ENTRY, minval=1, tooltip="Número mínimo de barras consecutivas que el precio debe cerrar por debajo de la EMA corta para considerar un retroceso.")
-lrEntryLen      = input.int(10, "LR Entrada Len", group=G_ENTRY, minval=2, tooltip="Barras para Regresión Lineal en entrada (no usada actualmente en lógica executeBuy)")
+// Inputs Lógica Entrada/Salida
+entry_lookback     = input.int(7, title="Entrada Lookback Mínimo", group=G_ENTRYEXIT, minval=2, tooltip="Número de barras hacia atrás para buscar el mínimo más bajo (`low`) como parte de la señal de entrada trigger.")
+entry_wait_bars    = input.int(3, title="Número de barras a esperar", group=G_ENTRYEXIT, minval=0, tooltip="Número de barras a esperar después de la señal 'Trigger' antes de buscar la vela de reversión (`close > open`) para ejecutar la compra.")
 
-// Inputs Lógica Salida Peak
-exitLookback    = input.int(7, "Salida Lookback Máx", group=G_EXIT, minval=2, tooltip="Barras hacia atrás para máximo cierre en Salida Peak")
-exitEmaBars     = input.int(5, "Min Barras s/EMA Salida Peak", group=G_EXIT, minval=2, tooltip="Mínimo barras sobre EMA para Salida Peak")
-volConfirmExit  = input.bool(true, "Vol Confirma Salida Peak", group=G_EXIT, tooltip="Requiere volumen alto para Salida Peak")
+exit_lookback      = input.int(7, title="Salida Lookback Máximo", group=G_ENTRYEXIT, minval=2, tooltip="Número de barras hacia atrás para buscar el cierre más alto (`close`) para la condición de Salida Peak.")
+exit_ema_bars      = input.int(5, title="Salida Mín Barras s/EMA", group=G_ENTRYEXIT, minval=2, tooltip="Número mínimo de barras consecutivas que el precio debe cerrar sobre la EMA corta para activar la Salida Peak.")
+
+// Inputs ADX
+adx_len            = input.int(14, title='ADX Longitud', group=G_ADX, minval=1, tooltip="Número de períodos para el cálculo del Average Directional Index (ADX).")
+adx_smooth         = input.int(14, title='ADX Suavizado', group=G_ADX, minval=1, tooltip="Número de períodos para el suavizado interno del ADX (usualmente igual a la Longitud ADX).")
+adx_threshold_base = input.float(15.0, title='ADX Umbral Base', group=G_ADX, minval=0, tooltip="Nivel mínimo base que debe superar el ADX para considerar la entrada (se ajusta dinámicamente con la volatilidad ATR).")
+
+// Inputs Volumen
+vol_len            = input.int(20, title="Volumen Longitud MA", group=G_VOL, minval=1, tooltip="Número de períodos para la Media Móvil Exponencial (EMA) del volumen.")
+vol_factor         = input.float(1.1, title="Volumen Factor Mínimo", group=G_VOL, minval=0, tooltip="Factor multiplicador de la EMA de volumen. El volumen actual debe superar (EMA Volumen * Factor) para considerar la entrada.", step=0.1)
 
 // Inputs ATR
-atrLen          = input.int(14, "ATR Longitud", group=G_ATR, minval=1, tooltip="Períodos para Average True Range")
-atrMultSL       = input.float(2.5, "ATR Mult SL Inicial", group=G_ATR, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Stop Loss Inicial")
+atr_len            = input.int(14, title='ATR Longitud', group=G_ATR, minval=1, tooltip="Número de períodos para el cálculo del Average True Range (ATR).")
+atr_mult           = input.float(1.2, title='ATR Mult SL Inicial', group=G_ATR, minval=0.1, tooltip="Multiplicador del ATR para calcular la distancia del Stop Loss inicial desde el precio estimado de entrada.", step=0.1)
 
-// Inputs Tamaño Posición
-equityPct       = input.float(0.99, "% Capital x Trade", group=G_SIZE, minval=0.01, maxval=1.0, step=0.001, tooltip="Porcentaje del capital (0.001-1) a usar por operación.")
-minQty          = input.float(0.00011, "Activo Cantidad Mínima", group=G_SIZE, step=0.0001, minval=0.00011, tooltip="Cantidad mínima de orden del exchange.")
+// Inputs Tamaño de Posición
+eqty_type          = input.string(defval="Porcentaje", title="Tipo Tamaño", options=["Porcentaje","ATR"], group=G_SIZE, tooltip="Método para calcular el tamaño de la posición: 'Porcentaje' (usa % Máx Equity) o 'ATR' (usa % Riesgo y distancia SL).")
+eqty_percent       = input.float(99, title='Capital % Máx x Trade', group=G_SIZE, minval=1, maxval=100, tooltip="Máximo porcentaje del capital total permitido para usar en una sola operación.") / 100
+risk_percent       = input.float(100, title='ATR % Riesgo x Trade', group=G_SIZE, minval=0.1, maxval=100, tooltip="Porcentaje del capital total a arriesgar en una operación, usado solo si 'Tipo Tamaño' es 'ATR'.") / 100
+min_qty            = input.float(0.00011, title='Activo Cantidad Mínima', group=G_SIZE, step=0.0001, minval=0.00011, tooltip="Cantidad mínima del activo base (ej. BTC) permitida por el exchange para colocar una orden.")
 
-// Inputs Gestión Riesgo & TSL
-minSLPct        = input.float(0.005, "SL Mínimo %", group=G_RISK, minval=0.001, maxval=0.10, step=0.001, tooltip="Distancia mínima SL en % del precio (ej. 0.5 para 0.5%).")
-maxDrawdownPct  = input.float(0.20, "Máx Drawdown Permitido %", group=G_RISK, minval=0.01, maxval=1, step=0.001, tooltip="Máximo drawdown porcentual permitido antes de detener nuevas operaciones.")
-tpMult          = input.float(3.0, "TP Mult ATR", group=G_RISK, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Take Profit")
-beMult          = input.float(1.5, "BE Mult ATR", group=G_RISK, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Break-Even")
-tslMethod       = input.string(TSL_PRICE, "TSL Método", options=[TSL_PRICE, TSL_LOWEST, TSL_PERCENT], group=G_RISK, tooltip="Elige el método de cálculo del Trailing Stop Loss (TSL).")
-tslSource       = input.string("low", "TSL Fuente [ATR Precio]", options=["close", "low"], group=G_RISK, tooltip="Precio base (Close o Low) si usas 'ATR (desde Precio)'.")
-tslMult         = input.float(2.0, "TSL Mult ATR [Métodos ATR]", group=G_RISK, minval=0.1, step=0.1, tooltip="Multiplicador ATR para TSL.")
-tslLookback     = input.int(10, "TSL Lookback [ATR Mínimo]", group=G_RISK, minval=2, tooltip="Período para buscar el mínimo para TSL.")
-tslPct          = input.float(0.03, "TSL % [Porcentaje]", group=G_RISK, minval=0.005, maxval=0.20, step=0.001, tooltip="Porcentaje fijo desde cierre para TSL (ej. 3 para 3%).")
-lrTslLen        = input.int(15, "TSL LR Longitud", group=G_RISK, minval=2, tooltip="Período para Regresión Lineal usada en TSL (si se usa en lib.calcTrailingStop).")
+// Inputs Gestión Trade & TSL
+string TSL_METHOD_ATR_PRICE = "ATR (desde Precio)"
+string TSL_METHOD_ATR_LOWEST = "ATR (desde Mínimo Reciente)"
+string TSL_METHOD_PERCENT = "Porcentaje (desde Cierre)"
+tsl_method_input = input.string(TSL_METHOD_PERCENT, "TSL Método", options=[TSL_METHOD_ATR_PRICE, TSL_METHOD_ATR_LOWEST, TSL_METHOD_PERCENT], group=G_MGMT, tooltip="Elige el método de cálculo del Trailing Stop Loss (TSL). Las opciones explican cómo se calcula.")
+tsl_source       = input.string("low", "TSL Fuente [ATR Precio]", options=["close", "low"], group=G_MGMT, tooltip="Precio base (Close o Low) para el cálculo del TSL cuando el método es 'ATR (desde Precio)'.")
+trl_mult         = input.float(1.9, title='TSL Mult ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR usado para calcular la distancia del TSL en los métodos basados en ATR.", step=0.1)
+tsl_lookback     = input.int(10, "TSL Lookback Mínimo", group=G_MGMT, minval=2, tooltip="Número de barras hacia atrás para buscar el mínimo (`low`) usado en el método TSL 'ATR (desde Mínimo Reciente)'.")
+tsl_percent      = input.float(5.0, "TSL Porcentaje", group=G_MGMT, minval=0.1, tooltip="Distancia porcentual fija desde el cierre (`close`) usada para el TSL en el método 'Porcentaje'.") / 100.0
+be_mult          = input.float(1.0, title='BE Multiplicador ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR desde la entrada. El precio debe superar (Entrada + ATR * Mult) para mover el SL a Break-Even.", step=0.1)
+tp_mult          = input.float(1.7, title='TP Multiplicador ATR', group=G_MGMT, minval=0.1, tooltip="Multiplicador del ATR desde la entrada para calcular el nivel de Take Profit.", step=0.1)
+ex_mult          = input.float(1.0, title='Exit Multiplicador', group=G_MGMT, minval=0.1, tooltip="Multiplicador añade un margen de tolerancia al precio para que no necesite tocar exactamente el mínimo anterior, sino que puede estar ligeramente por encima hasta un % más alto.", step=0.1)
 
 // Inputs Configuración de Órdenes
-orderType         = input.string("market", "Tipo Orden Entrada", options=["limit", "market"], group=G_ORD, tooltip="Tipo de orden para entradas.")
-priceOffsetPips   = input.int(0, "Límite Offset Pips", group=G_ORD, minval=0, tooltip="Para órdenes Límite: pips/ticks bajo precio actual (0=cierre).")
+order_type         = input.string("limit", title="Tipo Orden Entrada", options=["limit", "market"], group=G_ORD, tooltip="Tipo de orden a usar para las entradas (Market recomendado con entrada diferida).") // Default Market
+price_offset_pips  = input.int(5, title='Límite Offset Pips', group=G_ORD, minval=0, tooltip="Para órdenes Límite: Número de pips/ticks por debajo del precio actual para colocar la orden. 0 usa el precio de cierre.")
+
+// New Inputs for Webhook Alerts
+enable_webhook_alerts = input.bool(false, title="Enable Webhook Alerts?", group=G_ORD, tooltip="Enable sending alerts for trade execution via webhooks.")
+webhook_url = input.string("", title="Webhook URL", group=G_ORD, tooltip="The URL to send webhook alerts to.")
 
 // Inputs Visuales y Depuración
-enableWebhookAlerts = input.bool(false, "Activar Alertas Webhook", group=G_VIS, tooltip="Enviar alertas por webhook para ejecuciones de trade.")
-webhookUrl          = input.string("", "Webhook URL", group=G_VIS, tooltip="URL para enviar las alertas webhook.")
-showDebugPlots   = input.bool(false, title="Ver Plots Debug?", group=G_VIS, tooltip="Activa/Desactiva la visualización de plots técnicos adicionales.")
-showDebugLabels  = input.bool(true, title="Ver Labels Debug?", group=G_VIS, tooltip="Activa/Desactiva la visualización de etiquetas con información del estado.")
-bgcolorActive     = input.bool(true, title="Resaltar Fondo Ejecución?", group=G_VIS, tooltip="Activa/Desactiva el resaltado de fondo en las barras de ejecución.")
-
-
+show_debug_plots   = input.bool(false, title="Ver Plots Debug?", group=G_VIS, tooltip="Activa/Desactiva la visualización de plots técnicos adicionales para depuración.")
+show_debug_labels  = input.bool(true, title="Ver Labels Debug?", group=G_VIS, tooltip="Activa/Desactiva la visualización de etiquetas con información detallada del estado y cálculos.")
+bgcolor_active     = input.bool(true, title="Resaltar Fondo Ejecución?", group=G_VIS, tooltip="Activa/Desactiva el resaltado de fondo en las barras donde se ejecuta una entrada.")
 // *** Variables Globales de Estado ***
-var float EntryPrice          = na
-var float stopLossPrice       = na
-var float takeProfitPrice     = na
-var bool  breakEvenActive     = false
-var bool  trailingActive      = false
-var float lowestLowForTsl     = na
-var float peakEquity          = strategy.initial_capital
-var bool  riskLimitReached    = false
+var float   calculated_qty        = na
+var float   final_qty             = na
+var float   long_entry_price      = na
+var float   long_sl_price         = na
+var float   long_tp_price         = na
+var bool    long_be_active        = false
+var bool    long_trl_active       = false
+var bool    entrySignalActive     = false
+var int     barsSinceSignal       = 0
+var float   lowestSinceSignal     = na
 
 // *** Cálculos de Indicadores ***
-float currentEma = ta.ema(close, emaLen)
-float htfEma = request.security(syminfo.tickerid, htf, ta.ema(close, emaLen)[1], lookahead=barmerge.lookahead_off)
-bool isBullish = close > htfEma
+// EMAs
+ema_value         = ta.ema(close, ema_length)
+float htfEmaValue = request.security(syminfo.tickerid, HigherTimeframe, ema_value[1], lookahead=barmerge.lookahead_off)
+bool isBullish    = close > htfEmaValue
 
 // ATR - Optimizado
 float trueRange    = ta.tr
@@ -98,14 +102,8 @@ float atrCurrent   = na(atrFromLib) or atrFromLib <= 0 ? (na(smaOfTR) or smaOfTR
 
 // Distancia SL con mínimo configurable
 float slDist = math.max(atrCurrent * atrMultSL, close * (minSLPct / 100.0))
-float adxCurrent = na
-if useAdxFilter
-    [diPlus, diMinus, tempAdx] = ta.dmi(adxLen, adxSmooth)
-    adxCurrent := tempAdx
-else
-    adxCurrent := na
-     
-bool adxPass = lib.validateADX(adxCurrent, atrCurrent, close, adxThresholdBase, useAdxFilter)
+
+bool adxPass = lib.validateADX(adxLen, atrCurrent, adxSmooth, adxThresholdBase, useAdxFilter)
 bool volPass = lib.validateVolume(volume, volLen, volFactor, useVolFilter)
 bool lrPass = true
 float lrSlopeValue = 0.0
@@ -119,7 +117,7 @@ else
 
 float lrTslVal     = ta.linreg(low, lrTslLen, 0)
 
-int barsBelowShortEma = ta.barssince(close >= currentEma)
+int barsBelowShortEma = ta.barssince(close > currentEma)
 bool crossoverShortEma = ta.crossover(close, currentEma)
 
 float highestCloseVal = ta.highest(close, exitLookback)
@@ -146,37 +144,44 @@ equity = strategy.equity
 maxEquityToRisk = equity * equityPct // % del equity a usar
 
 // Cálculo de Cantidad
-float calculatedQtyRaw = 0.0 // Renombrado para claridad
+calculated_qty := 0.0
 if close > 0
-    calculatedQtyRaw := maxEquityToRisk / close // Siempre usa % del equity
+    if eqty_type == 'Porcentaje' // Corregido
+        calculated_qty := max_equity_risk / close
+    else if eqty_type == 'ATR'
+        if initial_sl_dista > 0
+            calculated_qty := risk_per_trade / initial_sl_dista
+        else
+            calculated_qty := max_equity_risk / close
+    else
+        calculated_qty := min_qty
 else
-    calculatedQtyRaw := 0.0
+    calculated_qty := 0.0
 
-// Asegurar Cantidad Mínima
-qtyAfterMinConstraint = na(calculatedQtyRaw) ? na : math.max(minQty, calculatedQtyRaw)
+// Ajustes y Redondeo Final
+float qty_after_min = na(calculated_qty) ? na : math.min(calculated_qty, max_equity_risk / close)
+float qty_after_max = na(qty_after_min) ? na : math.max(min_qty, qty_after_min)
+final_qty           := na(qty_after_max) ? na : lib.round (qty_after_max,6) // Usar mintick
 
-// Redondeo Final
-// --- CAMBIO: Eliminada la referencia a lib.calcPositionSize, ahora se calcula aquí ---
-finalPositionQty = na(qtyAfterMinConstraint) ? na : math.round_to_mintick(qtyAfterMinConstraint)
+if show_debug_labels
+    dbg_calc_qty_raw    := calculated_qty
+    dbg_max_qty_allowed := max_equity_risk / close
+    dbg_qty_after_min   := qty_after_min
+    dbg_qty_after_max   := qty_after_max
 
-// Pre-calcular TSL lowest low si se usa ese método
-if tslMethod == TSL_LOWEST
-    lowestLowForTsl := ta.lowest(low, tslLookback)
-else
-    lowestLowForTsl := na
-
-// *** GESTIÓN DE TRADE (SL/TP/TSL) ***
-float breakEvenActivationPrice = na
-float potentialNewStopLevel = na
-bool beActivatedThisBar = false
-bool tslUpdatedThisBar = false
+// *** GESTIÓN DE TRADE (SL/TP/BE/TSL) ***
+float long_be_price      = na
+float potential_new_stop = na
+bool be_activated_this_bar = false
+bool tsl_updated_this_bar = false
+float lowest_low_for_tsl = ta.lowest(low, tsl_lookback)
 
 if strategy.position_size > 0
     EntryPrice := strategy.position_avg_price
     
     takeProfitPrice := lib.calcTP(EntryPrice, atrCurrent, tpMult, 2, 5)
-    breakEvenActivationPrice := lib.calcBELevel(EntryPrice, atrCurrent, beMult, 5)
-    potentialNewStopLevel := lib.calcTSL(close, atrCurrent, tslMult, tslMethod, tslSource, lrTslVal, tslPct, lrSlopeValue, 5)
+    breakEvenActivationPrice := lib.calcBELevel(EntryPrice, atrCurrent, beMult, 2, 5)
+    potentialNewStopLevel := lib.calcTSL(close, atrCurrent, tslMult, tslMethod, tslSource, lrTslVal, tslPct, lrSlopeValue, 2, 5)
     
     beActivatedThisBar := false
     tslUpdatedThisBar := false
@@ -185,7 +190,7 @@ if strategy.position_size > 0
         breakEvenActive := true
         trailingActive := true
         if not na(EntryPrice)
-            float newSlVal = lib.round(EntryPrice,2, 5)
+            float newSlVal = lib.round(EntryPrice, 2, 5)
             if na(stopLossPrice) or newSlVal != stopLossPrice
                 stopLossPrice := newSlVal
                 beActivatedThisBar := true
@@ -195,12 +200,12 @@ if strategy.position_size > 0
         tslUpdatedThisBar := true
 
 // *** CONDICIONES DE ENTRADA ***
-bool entryTrigger = (barsBelowShortEma >= retrBars) and isBullish and slDist > 0 and volPass and lrPass and adxPass //and crossoverShortEma
+bool entryTrigger = (barsBelowShortEma >= retrBars and crossoverShortEma) and isBullish and slDist > 0 and adxPass and volPass and lrPass
 
 // *** LÓGICA DE ENTRADA ***
 bool qtyOk     = not na(finalPositionQty) and finalPositionQty >= minQty
 bool costOk    = not na(finalPositionQty) and not na(close) and close > 0
-float estCostVal  = costOk ? lib.round(finalPositionQty * close,2, 5) : na
+float estCostVal  = costOk ? lib.round(finalPositionQty * close, 2, 5) : na
 bool equityOk = not na(estCostVal) and equity > estCostVal
 bool canEnterTrade = strategy.position_size == 0 and qtyOk and equityOk and not riskLimitReached
 
@@ -209,46 +214,50 @@ if entryTrigger and canEnterTrade
     float entryPriceExec = na
     if orderType == 'limit'
         float limitOffsetVal = priceOffsetPips * syminfo.mintick
-        entryPriceExec := lib.round((limitOffsetVal == 0 ? close : close - limitOffsetVal),2, 5)
+        entryPriceExec := lib.round((limitOffsetVal == 0 ? close : close - limitOffsetVal), 2, 5)
 
     float initialSl = na
     float slBasePrice = orderType == 'limit' ? (not na(entryPriceExec) ? entryPriceExec : close) : close
     if not na(slBasePrice) and not na(slDist)
-        initialSl := lib.round(slBasePrice - slDist,2, 5)
+        initialSl := lib.round(slBasePrice - slDist, 2, 5)
 
-    if not na(initialSl)
-        strategy.entry("Compra", strategy.long, qty=finalPositionQty, limit=entryPriceExec)
+    if not na(initial_sl_price)
+        strategy.entry("Compra", strategy.long, qty=final_qty, limit=entry_price)
+        entrySignalActive := false // Resetear estado DESPUÉS de enviar orden
 
-        if strategy.position_size[1] == 0
-            stopLossPrice := initialSl
-            takeProfitPrice := na
-            breakEvenActive := false
-            trailingActive := false
-            peakEquity := equity
+        if strategy.position_size[1] == 0 // Usar [1] para verificar si NO había posición antes de esta barra
+            long_sl_price := initial_sl_price // Asignar SL inicial
+            long_tp_price := na
+            long_be_active := false
+            long_trl_active := false
 
-        if enableWebhookAlerts and webhookUrl != "" and strategy.position_size[1] == 0
-            string entryMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "buy", "qty": ' + str.tostring(finalPositionQty) + ', "type": "' + orderType + '"'
-            if orderType == 'limit' and not na(entryPriceExec)
-                entryMsg += ', "price": ' + str.tostring(entryPriceExec)
-            entryMsg += ' }'
-            alert(entryMsg + "{{webhook=" + webhookUrl + "}}", alert.freq_once_per_bar_close)
+        // Add alert for entry
+        if enable_webhook_alerts and webhook_url != ""
+            string entry_alert_message = '{ "symbol": "' + syminfo.tickerid + '", "side": "buy", "qty": ' + str.tostring(final_qty) + ', "type": "' + order_type + '"'
+            if order_type == 'limit'
+                entry_alert_message += ', "price": ' + str.tostring(entry_price)
+            entry_alert_message += ' }'
+            alert(entry_alert_message, alert.freq_once_per_bar_close, webhook=webhook_url)
 
 // *** CONDICIONES DE SALIDA ***
-if strategy.position_size > 0 and not na(stopLossPrice)
-    float actualLimit = (not trailingActive and isBullish) ? takeProfitPrice : na
-    strategy.exit(id='Venta SL/TP', from_entry='Compra', stop=stopLossPrice, limit=actualLimit, comment_profit='TP Hit', comment_loss='SL/BE/TSL Hit')
-    // Webhook para strategy.exit (si se activa)
-    if enableWebhookAlerts and webhookUrl != ""
-        // Nota: El mensaje de alerta aquí es genérico, ya que no sabemos si fue SL o TP
-        // Podrías usar alertcondition separadas si necesitas diferenciar para el webhook
-        string exitMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "{{strategy.order.comment}}" }' // Usa placeholder
-        alert(exitMsg + "{{webhook=" + webhookUrl + "}}", alert.freq_once_per_bar_close)
+// Salida 1: Pendiente por SL/TP/BE/TSL vía strategy.exit
+if strategy.position_size > 0 and not na(long_sl_price) and isBullish
+    float actual_limit_price = long_trl_active ? na : long_tp_price// TP Condicional
+    strategy.exit(id='Venta SL/TP', from_entry='Compra', stop=long_sl_price, limit=actual_limit_price, comment_profit='TP', comment_loss='SL/BE/TSL')
 
-if strategy.position_size > 0 and peakExitCond and not trailingActive and isBullish
+    // Add alert for SL/TP/BE/TSL exit
+    if enable_webhook_alerts and webhook_url != ""
+        string exit_alert_message = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "SL/TP/BE/TSL" }'
+        alert(exit_alert_message, alert.freq_once_per_bar_close, webhook=webhook_url)
+
+// Salida 2: Inmediata por Condición "Peak Exit" vía strategy.close
+if strategy.position_size > 0 and exit_peak_condition and not long_trl_active and isBullish
     strategy.close(id='Compra', comment='Peak Exit')
-    if enableWebhookAlerts and webhookUrl != ""
-        string peakExitMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "Peak Exit" }'
-        alert(peakExitMsg + "{{webhook=" + webhookUrl + "}}", alert.freq_once_per_bar_close)
+
+    // Add alert for Peak Exit
+    if enable_webhook_alerts and webhook_url != ""
+        string peak_exit_alert_message = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "Peak Exit" }'
+        alert(peak_exit_alert_message, alert.freq_once_per_bar_close, webhook=webhook_url)
 
 if strategy.position_size > 0 and not isBullish
     strategy.close(id='Compra', comment='Trend Exit (HTF)')
@@ -257,28 +266,30 @@ if strategy.position_size > 0 and not isBullish
         alert(trendExitMsg + "{{webhook=" + webhookUrl + "}}", alert.freq_once_per_bar_close)
 
 // *** VISUALIZACIÓN ***
-// Inputs Visuales y Depuración
-enableDebugMode = input.bool(true, title="Activar Modo Debug", group=G_VIS) // Nuevo para depuración
 // EMAs
 plot(currentEma, "EMA Corta", color.new(color.yellow, 0), 1)
 plot(htfEma, "EMA HTF", color.new(color.aqua, 0), 1)
 
-// Stop Loss y Take Profit
+// Stop Loss
 plot(strategy.position_size > 0 ? stopLossPrice : na, "Stop Loss", color.new(color.red, 0), 2, plot.style_cross)
+// Take Profit
 plot(strategy.position_size > 0 and not trailingActive ? takeProfitPrice : na, "Take Profit", color.new(color.green, 0), 2, plot.style_cross)
 
-// Debug info
-if showDebugLabels
-    var infoLabel = label.new(bar_index, na, "", color=color.white, style=label.style_label_left, textcolor=color.white)
-    label.set_xy(infoLabel, bar_index, high + (2 * atrCurrent))
-    
-    string labelText = "---DEBUG INFO---\n" + "isBullish: " + str.tostring(isBullish) + "\n" + "crossoverShortEma: " + str.tostring(crossoverShortEma) + "\n" + "barsBelowShortEma: " + str.tostring(barsBelowShortEma) + "\n" + "adxPass: " + str.tostring(adxPass) + "\n" + "volPass: " + str.tostring(volPass) + "\n" + "entryTrigger: " + str.tostring(entryTrigger) + "\n" + "canEnterTrade: " + str.tostring(canEnterTrade) + "\n" + "finalQty: " + str.tostring(finalPositionQty)
-    
-    label.set_text(infoLabel, labelText)
+// Plots de Depuración (activar/desactivar según necesidad)
+plot_entryTrigger = input.bool(false, "Plot  entryTrigger", group="Debug Plots")
+plotshape(plot_entryTrigger and entryTrigger, title="Execute Buy", style=shape.triangleup, location=location.bottom, color=color.new(color.green, 0), size=size.auto)
 
-// Debug shapes
-plotshape(enableDebugMode and entryTrigger, title="Entry Trigger", style=shape.triangleup, location=location.bottom, color=color.new(color.green, 0), size=size.normal)
-plotshape(enableDebugMode and crossoverShortEma, title="EMA Cross", style=shape.circle, location=location.bottom, color=color.new(color.blue, 0), size=size.tiny)
+plot_canTrade = input.bool(false, "Plot canTrade", group="Debug Plots")
+// plotshape(plot_canTrade and canTrade, title="Can Trade", style=shape.triangledown, location=location.top, color=color.new(color.blue, 0), size=size.small) // canTrade variable removed
 
-bgcolor(enableDebugMode and entryTrigger ? color.new(color.green, 90) : na, title="Entry Signal")
-bgcolor(enableDebugMode and not isBullish ? color.new(color.red, 90) : na, title="Not Bullish")
+plot_lrFilter = input.bool(false, "Plot lrFilter", group="Debug Plots")
+bgcolor(plot_lrFilter and useLrTrendFilter ? color.new(color.purple, 90) : na, title="LR Filter")
+
+plot_adxfilter = input.bool(false, "Plot adxfilter", group="Debug Plots")
+bgcolor(plot_adxfilter and useAdxFilter ? color.new(color.orange, 90) : na, title="ADX Filter")
+
+plot_volfilter = input.bool(false, "Plot volfilter", group="Debug Plots")
+bgcolor(plot_volfilter and useVolFilter ? color.new(color.teal, 90) : na, title="Vol Filter")
+
+plot_bullish = input.bool(false, "Plot bullish", group="Debug Plots")
+// bgcolor(plot_bullish and bullish ? color.new(color.lime, 90) : na, title="Bullish Filter") // bullish variable removed
