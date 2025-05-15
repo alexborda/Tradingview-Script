@@ -83,28 +83,16 @@ export calcTP(float entry, float atrVal, float tpMult, int minDec = 2, int maxDe
         tpPrice := round(entry + tpDist, minDec, maxDec) // Usa la función round de esta librería
     tpPrice
 
-<<<<<<< HEAD
 export calcBELevel(float entry, float atrVal, float beMult,int minDec=2, int maxDec = 5) => // Renombrado y precisión fija
-=======
-export calcBELevel(float entry, float atrVal, float beMult, int maxDec = 5) => // Renombrado y precisión fija
->>>>>>> 72ab00867b843f67a1daf66a4caf8b49ff94ccf5
     float bePrice = na
     if not na(entry) and entry > 0 and not na(atrVal) and atrVal > 0
         beDist = atrVal * beMult
         beDist := math.max(beDist, entry * 0.005)
-<<<<<<< HEAD
         bePrice := round(entry + beDist, minDec, maxDec)
         
     bePrice
 
 export calcTSL(float currentPx, float atrVal, float tslMult, string tslMethod, string tslSrc, float lrTsl, float tslPctVal, float trendSlp,int minDec=2, int maxDec = 5) =>
-=======
-        //bePrice := round(entry + beDist, minDec, maxDec)
-        bePrice := smartround(entry + beDist, maxDec)
-    bePrice
-
-export calcTSL(float currentPx, float atrVal, float tslMult, string tslMethod, string tslSrc, float lrTsl, float tslPctVal, float trendSlp, int maxDec = 5) =>
->>>>>>> 72ab00867b843f67a1daf66a4caf8b49ff94ccf5
     float tslPrice = na
     if not na(currentPx) and currentPx > 0 and not na(atrVal) and atrVal > 0
         sensitivity = 1.0
@@ -120,15 +108,12 @@ export calcTSL(float currentPx, float atrVal, float tslMult, string tslMethod, s
 
         if tslMethod == "ATR (desde Precio)"
             basePx = tslSrc == "close" ? close : low
-            //tslPrice := round(basePx - tslAtrDist, minDec, maxDec)
-            tslPrice := smartround(basePx - tslAtrDist, maxDec)
+            tslPrice := round(basePx - tslAtrDist, minDec, maxDec)
         else if tslMethod == "ATR (desde Mínimo Reciente)"
             if not na(lrTsl) // Asegurar que lrTsl (antes lrTslValue) es válido
-                //tslPrice := round(lrTsl - tslAtrDist, minDec, maxDec)
-                tslPrice := smartround(lrTsl - tslAtrDist, maxDec)
+                tslPrice := round(lrTsl - tslAtrDist, minDec, maxDec)
         else if tslMethod == "Porcentaje (desde Cierre)"
-            //tslPrice := round(currentPx * (1 - adjTslPct), minDec, maxDec)
-            tslPrice := smartround(currentPx * (1 - adjTslPct), maxDec)
+            tslPrice := round(currentPx * (1 - adjTslPct), minDec, maxDec)
     tslPrice
 
 export calcPosSize(float equity, float equityPctToUse, series float closePx, float minQtyVal, float slDistVal = na, float riskPctToUse = na, string qtyType = "Porcentaje", int qtyPrecDec = -1) => // Renombrado
@@ -153,11 +138,9 @@ export calcPosSize(float equity, float equityPctToUse, series float closePx, flo
     float finalPosQty = na
     if not na(qtyAfterMinLimit)
         if qtyPrecDec == -1
-            //finalPosQty := math.round_to_mintick(qtyAfterMinLimit)
-            finalPosQty := smartround(qtyAfterMinLimit,5)
+            finalPosQty := math.round_to_mintick(qtyAfterMinLimit)
         else
-            //finalPosQty := round(qtyAfterMinLimit, qtyPrecDec, qtyPrecDec)
-            finalPosQty := smartround(qtyAfterMinLimit, qtyPrecDec)
+            finalPosQty := round(qtyAfterMinLimit, qtyPrecDec, qtyPrecDec)
     finalPosQty
 
 export validateADX(float currentADX, float atrVal, series float closePrice, float adxThreshold, bool useFilter = true) => // Renombrado
