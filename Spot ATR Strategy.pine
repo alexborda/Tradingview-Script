@@ -6,7 +6,7 @@ strategy('Spot ATR Strategy',
      slippage=1,
      initial_capital=10000)
 
-import alexborda/AlexLib/8 as lib
+import alexborda/AlexLib/12 as lib
 
 // --- Grupos de Inputs ---
 string G_STRAT = "1. Filtros Estrategia"
@@ -98,8 +98,14 @@ float atrCurrent   = na(atrFromLib) or atrFromLib <= 0 ? (na(smaOfTR) or smaOfTR
 
 // Distancia SL con mínimo configurable
 float slDist = math.max(atrCurrent * atrMultSL, close * (minSLPct / 100.0))
-
-bool adxPass = lib.validateADX(adxLen, atrCurrent, adxSmooth, adxThresholdBase, useAdxFilter)
+float adxCurrent = na
+if useAdxFilter
+    [diPlus, diMinus, tempAdx] = ta.dmi(adxLen, adxSmooth)
+    adxCurrent := tempAdx
+else
+    adxCurrent := na
+     
+bool adxPass = lib.validateADX(adxCurrent, atrCurrent, close, adxThresholdBase, useAdxFilter)
 bool volPass = lib.validateVolume(volume, volLen, volFactor, useVolFilter)
 bool lrPass = true
 float lrSlopeValue = 0.0
@@ -113,7 +119,7 @@ else
 
 float lrTslVal     = ta.linreg(low, lrTslLen, 0)
 
-int barsBelowShortEma = ta.barssince(close > currentEma)
+int barsBelowShortEma = ta.barssince(close >= currentEma)
 bool crossoverShortEma = ta.crossover(close, currentEma)
 
 float highestCloseVal = ta.highest(close, exitLookback)
@@ -169,8 +175,8 @@ if strategy.position_size > 0
     EntryPrice := strategy.position_avg_price
     
     takeProfitPrice := lib.calcTP(EntryPrice, atrCurrent, tpMult, 2, 5)
-    breakEvenActivationPrice := lib.calcBELevel(EntryPrice, atrCurrent, beMult, 2, 5)
-    potentialNewStopLevel := lib.calcTSL(close, atrCurrent, tslMult, tslMethod, tslSource, lrTslVal, tslPct, lrSlopeValue, 2, 5)
+    breakEvenActivationPrice := lib.calcBELevel(EntryPrice, atrCurrent, beMult, 5)
+    potentialNewStopLevel := lib.calcTSL(close, atrCurrent, tslMult, tslMethod, tslSource, lrTslVal, tslPct, lrSlopeValue, 5)
     
     beActivatedThisBar := false
     tslUpdatedThisBar := false
@@ -179,7 +185,7 @@ if strategy.position_size > 0
         breakEvenActive := true
         trailingActive := true
         if not na(EntryPrice)
-            float newSlVal = lib.round(EntryPrice, 2, 5)
+            float newSlVal = lib.round(EntryPrice,2, 5)
             if na(stopLossPrice) or newSlVal != stopLossPrice
                 stopLossPrice := newSlVal
                 beActivatedThisBar := true
@@ -189,12 +195,12 @@ if strategy.position_size > 0
         tslUpdatedThisBar := true
 
 // *** CONDICIONES DE ENTRADA ***
-bool entryTrigger = (barsBelowShortEma >= retrBars and crossoverShortEma) and isBullish and slDist > 0 and adxPass and volPass and lrPass
+bool entryTrigger = (barsBelowShortEma >= retrBars) and isBullish and slDist > 0 and volPass and lrPass and adxPass //and crossoverShortEma
 
 // *** LÓGICA DE ENTRADA ***
 bool qtyOk     = not na(finalPositionQty) and finalPositionQty >= minQty
 bool costOk    = not na(finalPositionQty) and not na(close) and close > 0
-float estCostVal  = costOk ? lib.round(finalPositionQty * close, 2, 5) : na
+float estCostVal  = costOk ? lib.round(finalPositionQty * close,2, 5) : na
 bool equityOk = not na(estCostVal) and equity > estCostVal
 bool canEnterTrade = strategy.position_size == 0 and qtyOk and equityOk and not riskLimitReached
 
@@ -203,12 +209,12 @@ if entryTrigger and canEnterTrade
     float entryPriceExec = na
     if orderType == 'limit'
         float limitOffsetVal = priceOffsetPips * syminfo.mintick
-        entryPriceExec := lib.round((limitOffsetVal == 0 ? close : close - limitOffsetVal), 2, 5)
+        entryPriceExec := lib.round((limitOffsetVal == 0 ? close : close - limitOffsetVal),2, 5)
 
     float initialSl = na
     float slBasePrice = orderType == 'limit' ? (not na(entryPriceExec) ? entryPriceExec : close) : close
     if not na(slBasePrice) and not na(slDist)
-        initialSl := lib.round(slBasePrice - slDist, 2, 5)
+        initialSl := lib.round(slBasePrice - slDist,2, 5)
 
     if not na(initialSl)
         strategy.entry("Compra", strategy.long, qty=finalPositionQty, limit=entryPriceExec)
@@ -251,30 +257,28 @@ if strategy.position_size > 0 and not isBullish
         alert(trendExitMsg + "{{webhook=" + webhookUrl + "}}", alert.freq_once_per_bar_close)
 
 // *** VISUALIZACIÓN ***
+// Inputs Visuales y Depuración
+enableDebugMode = input.bool(true, title="Activar Modo Debug", group=G_VIS) // Nuevo para depuración
 // EMAs
 plot(currentEma, "EMA Corta", color.new(color.yellow, 0), 1)
 plot(htfEma, "EMA HTF", color.new(color.aqua, 0), 1)
 
-// Stop Loss
+// Stop Loss y Take Profit
 plot(strategy.position_size > 0 ? stopLossPrice : na, "Stop Loss", color.new(color.red, 0), 2, plot.style_cross)
-// Take Profit
 plot(strategy.position_size > 0 and not trailingActive ? takeProfitPrice : na, "Take Profit", color.new(color.green, 0), 2, plot.style_cross)
 
-// Plots de Depuración (activar/desactivar según necesidad)
-plot_entryTrigger = input.bool(false, "Plot  entryTrigger", group="Debug Plots")
-plotshape(plot_entryTrigger and entryTrigger, title="Execute Buy", style=shape.triangleup, location=location.bottom, color=color.new(color.green, 0), size=size.auto)
+// Debug info
+if showDebugLabels
+    var infoLabel = label.new(bar_index, na, "", color=color.white, style=label.style_label_left, textcolor=color.white)
+    label.set_xy(infoLabel, bar_index, high + (2 * atrCurrent))
+    
+    string labelText = "---DEBUG INFO---\n" + "isBullish: " + str.tostring(isBullish) + "\n" + "crossoverShortEma: " + str.tostring(crossoverShortEma) + "\n" + "barsBelowShortEma: " + str.tostring(barsBelowShortEma) + "\n" + "adxPass: " + str.tostring(adxPass) + "\n" + "volPass: " + str.tostring(volPass) + "\n" + "entryTrigger: " + str.tostring(entryTrigger) + "\n" + "canEnterTrade: " + str.tostring(canEnterTrade) + "\n" + "finalQty: " + str.tostring(finalPositionQty)
+    
+    label.set_text(infoLabel, labelText)
 
-plot_canTrade = input.bool(false, "Plot canTrade", group="Debug Plots")
-// plotshape(plot_canTrade and canTrade, title="Can Trade", style=shape.triangledown, location=location.top, color=color.new(color.blue, 0), size=size.small) // canTrade variable removed
+// Debug shapes
+plotshape(enableDebugMode and entryTrigger, title="Entry Trigger", style=shape.triangleup, location=location.bottom, color=color.new(color.green, 0), size=size.normal)
+plotshape(enableDebugMode and crossoverShortEma, title="EMA Cross", style=shape.circle, location=location.bottom, color=color.new(color.blue, 0), size=size.tiny)
 
-plot_lrFilter = input.bool(false, "Plot lrFilter", group="Debug Plots")
-bgcolor(plot_lrFilter and useLrTrendFilter ? color.new(color.purple, 90) : na, title="LR Filter")
-
-plot_adxfilter = input.bool(false, "Plot adxfilter", group="Debug Plots")
-bgcolor(plot_adxfilter and useAdxFilter ? color.new(color.orange, 90) : na, title="ADX Filter")
-
-plot_volfilter = input.bool(false, "Plot volfilter", group="Debug Plots")
-bgcolor(plot_volfilter and useVolFilter ? color.new(color.teal, 90) : na, title="Vol Filter")
-
-plot_bullish = input.bool(false, "Plot bullish", group="Debug Plots")
-// bgcolor(plot_bullish and bullish ? color.new(color.lime, 90) : na, title="Bullish Filter") // bullish variable removed
+bgcolor(enableDebugMode and entryTrigger ? color.new(color.green, 90) : na, title="Entry Signal")
+bgcolor(enableDebugMode and not isBullish ? color.new(color.red, 90) : na, title="Not Bullish")

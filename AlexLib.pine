@@ -16,10 +16,9 @@ export round(float num, int minDec = 2, int maxDec = 8) =>
     mult = math.pow(10, dec)
     math.round(num * mult) / mult
 
-export truncate(float num, int minDec = 2, int maxDec = 8) =>
-    dec = getAppropriateDecimals(num, minDec, maxDec)
-    factor = math.pow(10, dec)
-    int(num * factor) / factor
+export smartround(float number, int decimals) =>
+    float multiplier = math.pow(10, decimals)
+    math.round(number * multiplier) / multiplier
 
 export getPercentChange(float val1, float val2, int lookback) => // Renombrado
     vChange = val1 - val2
@@ -84,18 +83,19 @@ export calcTP(float entry, float atrVal, float tpMult, int minDec = 2, int maxDe
         tpPrice := round(entry + tpDist, minDec, maxDec) // Usa la función round de esta librería
     tpPrice
 
-export calcBELevel(float entry, float atrVal, float beMult, int minDec = 2, int maxDec = 5) => // Renombrado y precisión fija
+export calcBELevel(float entry, float atrVal, float beMult,int minDec=2, int maxDec = 5) => // Renombrado y precisión fija
     float bePrice = na
     if not na(entry) and entry > 0 and not na(atrVal) and atrVal > 0
         beDist = atrVal * beMult
         beDist := math.max(beDist, entry * 0.005)
         bePrice := round(entry + beDist, minDec, maxDec)
+        
     bePrice
 
-export calcTSL(float currentPx, float atrVal, float tslMult, string tslMethod, string tslSrc, float lrTsl, float tslPctVal, float trendSlp, int minDec = 2, int maxDec = 5) => // Renombrado
+export calcTSL(float currentPx, float atrVal, float tslMult, string tslMethod, string tslSrc, float lrTsl, float tslPctVal, float trendSlp,int minDec=2, int maxDec = 5) =>
     float tslPrice = na
     if not na(currentPx) and currentPx > 0 and not na(atrVal) and atrVal > 0
-        sensitivity = 1.0 // Simplificado, o pasar como parámetro si se quiere ajustar
+        sensitivity = 1.0
         adjTslMult = tslMult
         adjTslPct = tslPctVal
 
@@ -143,12 +143,12 @@ export calcPosSize(float equity, float equityPctToUse, series float closePx, flo
             finalPosQty := round(qtyAfterMinLimit, qtyPrecDec, qtyPrecDec)
     finalPosQty
 
-export validateADX(float adxVal, float atrVal, series float closePx, float adxThreshBase, bool useFilter = true) => // Renombrado
+export validateADX(float currentADX, float atrVal, series float closePrice, float adxThreshold, bool useFilter = true) => // Renombrado
     passes = true
     if useFilter
-        volFactor = closePx > 0 ? atrVal / closePx : 0
-        adxThresh = adxThreshBase * (1 + volFactor)
-        passes := not na(adxVal) and not na(adxThresh) and adxVal > adxThresh
+        volFactor = closePrice > 0 ? atrVal / closePrice : 0
+        dynamicADX = adxThreshold * (1 + volFactor)
+        passes := not na(currentADX) and not na(dynamicADX) and currentADX > dynamicADX
     passes
 
 export validateVolume(series float vol, float volAvgLen, float volFactorVal, bool useFilter = true) => // Renombrado
