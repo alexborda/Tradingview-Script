@@ -94,8 +94,6 @@ bool isBullish = currentEma > htfEma
 bool crossoverBullish = ta.crossover(close, htfEma)
 bool crossoverShortEma = ta.crossover(close, currentEma)
 
-// ATR Calculation
-float atrCurrent = ta.atr(atrLen)
 // ATR - Optimizado
 float trueRange    = ta.tr
 float atrLib   = ta.atr(atrLen)
@@ -103,13 +101,6 @@ float smaOfTR      = ta.sma(trueRange, atrLen)
 float atrCurrent   = na(atrLib) or atrLib <= 0 ? (na(smaOfTR) or smaOfTR <= 0 ? close * 0.01 : smaOfTR) : atrLib
 
 // Distancia SL con mínimo configurable
-float slDist = math.max(atrCurrent * atrMultSL, close * (minSLPct / 100.0))
-float adxCurrent = na
-if useAdxFilter
-    [diPlus, diMinus, tempAdx] = ta.dmi(adxLen, adxSmooth)
-    adxCurrent := tempAdx
-     
-bool adxPass = lib.validateADX(adxCurrent, atrCurrent, close, adxThresholdBase, useAdxFilter)
 float slDist = math.max(atrCurrent * atrMultSL, close * minSLPct)
 
 float adxCurrent = na
@@ -131,10 +122,6 @@ else
     lrPass := true
     lrSlopeValue := 0.0
 
-float lrTslVal     = ta.linreg(low, lrTslLen, 0)
-
-int barsBelowShortEma = ta.barssince(close >= currentEma)
-bool crossoverShortEma = ta.crossover(close, currentEma)
 float lrTslVal = tslMethod == TSL_LOWEST ? ta.linreg(low, lrTslLen, 0) : na
 
 //Contador de barras sobre y abajo de la ema corta
@@ -174,10 +161,6 @@ else
 
 // Asegurar Cantidad Mínima
 qtyAfterMinConstraint = na(calculatedQtyRaw) ? na : math.max(minQty, calculatedQtyRaw)
-
-// Redondeo Final
-// --- CAMBIO: Eliminada la referencia a lib.calcPositionSize, ahora se calcula aquí ---
-finalPositionQty = na(qtyAfterMinConstraint) ? na : math.round_to_mintick(qtyAfterMinConstraint)
 finalPositionQty = na(qtyAfterMinConstraint) ? na : math.round_to_mintick(qtyAfterMinConstraint)
 
 // Pre-calcular TSL lowest low si se usa ese método
@@ -209,7 +192,6 @@ if strategy.position_size > 0
         beActive := true
         // Ya NO activamos automáticamente el trailing
         if not na(EntryPrice)
-            float newSlVal = lib.round(EntryPrice,2, 5)
             float newSlVal = lib.round(EntryPrice, 2, 5)
             if na(stopLossPrice) or newSlVal != stopLossPrice
                 stopLossPrice := newSlVal
@@ -225,17 +207,11 @@ if strategy.position_size > 0
         tslUpdatedThisBar := true
 
 // *** CONDICIONES DE ENTRADA ***
-bool entryTrigger = (barsBelowShortEma >= retrBars) and isBullish and slDist > 0 and volPass and lrPass and adxPass //and crossoverShortEma
-
 bool entryTrigger = (barsBelowShortEma >= retrBars) and not isBullish and slDist > 0 and volPass and lrPass and adxPass //and crossoverShortEma //
 
 // *** LÓGICA DE ENTRADA ***
 bool qtyOk     = not na(finalPositionQty) and finalPositionQty >= minQty
 bool costOk    = not na(finalPositionQty) and not na(close) and close > 0
-float estCostVal  = costOk ? lib.round(finalPositionQty * close,2, 5) : na
-bool equityOk = not na(estCostVal) and equity > estCostVal
-bool canEnterTrade = strategy.position_size == 0 and qtyOk and equityOk and not riskLimitReached
-
 float estCostVal  = costOk ? lib.round(finalPositionQty * close,2, 5) : na
 bool capitalOk = not na(estCostVal) and capital > estCostVal
 bool canEnterTrade = strategy.position_size == 0 and qtyOk and capitalOk and not riskLimitReached
@@ -246,12 +222,10 @@ if entryTrigger and canEnterTrade
     if orderType == 'limit'
         float limitOffsetVal = priceOffsetPips * syminfo.mintick
         entryPriceExec := lib.round((limitOffsetVal == 0 ? close : close - limitOffsetVal),2, 5)
-        entryPriceExec := lib.round((limitOffsetVal == 0 ? close : close - limitOffsetVal),2, 5)
 
     float initialSl = na
     float slBasePrice = orderType == 'limit' ? (not na(entryPriceExec) ? entryPriceExec : close) : close
     if not na(slBasePrice) and not na(slDist)
-        initialSl := lib.round(slBasePrice - slDist,2, 5)
         initialSl := lib.round(slBasePrice - slDist,2, 5)
 
     if not na(initialSl)
@@ -259,8 +233,6 @@ if entryTrigger and canEnterTrade
 
         if strategy.position_size[1] == 0
             stopLossPrice := initialSl
-            breakEvenActive := false
-            trailingActive := false
             takeProfitPrice := na
             beActive := false
             trlActive := false
