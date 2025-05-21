@@ -90,11 +90,8 @@ float currentEma = ta.ema(close, emaLen)
 float htfEma = request.security(syminfo.tickerid, htf, ta.ema(close, emaLen)[1], lookahead=barmerge.lookahead_off)
 bool isBullish = close > htfEma
 
-// ATR - Optimizado
-float trueRange    = ta.tr
-float atrFromLib   = ta.atr(atrLen)
-float smaOfTR      = ta.sma(trueRange, atrLen)
-float atrCurrent   = na(atrFromLib) or atrFromLib <= 0 ? (na(smaOfTR) or smaOfTR <= 0 ? close * 0.01 : smaOfTR) : atrFromLib
+// ATR Calculation
+float atrCurrent = ta.atr(atrLen)
 
 // Distancia SL con mínimo configurable
 float slDist = math.max(atrCurrent * atrMultSL, close * (minSLPct / 100.0))
@@ -102,8 +99,6 @@ float adxCurrent = na
 if useAdxFilter
     [diPlus, diMinus, tempAdx] = ta.dmi(adxLen, adxSmooth)
     adxCurrent := tempAdx
-else
-    adxCurrent := na
      
 bool adxPass = lib.validateADX(adxCurrent, atrCurrent, close, adxThresholdBase, useAdxFilter)
 bool volPass = lib.validateVolume(volume, volLen, volFactor, useVolFilter)
@@ -221,10 +216,8 @@ if entryTrigger and canEnterTrade
 
         if strategy.position_size[1] == 0
             stopLossPrice := initialSl
-            takeProfitPrice := na
             breakEvenActive := false
             trailingActive := false
-            peakEquity := equity
 
         if enableWebhookAlerts and webhookUrl != "" and strategy.position_size[1] == 0
             string entryMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "buy", "qty": ' + str.tostring(finalPositionQty) + ', "type": "' + orderType + '"'
