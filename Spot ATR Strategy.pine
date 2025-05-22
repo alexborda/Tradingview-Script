@@ -45,17 +45,17 @@ volConfirmExit  = input.bool(true, "Vol Confirma Salida Peak", group=G_EXIT, too
 
 // Inputs ATR
 atrLen          = input.int(14, "ATR Longitud", group=G_ATR, minval=1, tooltip="Períodos para Average True Range")
-atrMultSL       = input.float(2.5, "ATR Mult SL Inicial", group=G_ATR, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Stop Loss Inicial")
+atrMultSL       = input.float(1.4, "ATR Mult SL Inicial", group=G_ATR, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Stop Loss Inicial")
 
 // Inputs Tamaño Posición
 capitalPct       = input.float(1, "% Capital x Trade", group=G_SIZE, minval=0.01, maxval=1.0, step=0.001, tooltip="Porcentaje del capital (0.001-1) a usar por operación.")
 minQty          = input.float(0.00011, "Activo Cantidad Mínima", group=G_SIZE, step=0.0001, minval=0.00011, tooltip="Cantidad mínima de orden del exchange.")
 
 // Inputs Gestión Riesgo & TSL
-minSLPct        = input.float(0.005, "SL Mínimo (Decimal)", group=G_RISK, minval=0.001, maxval=0.10, step=0.001, tooltip="Distancia mínima SL como decimal del precio (ej. 0.005 para 0.5%).")
+minSLPct        = input.float(0.05, "SL Mínimo (Decimal)", group=G_RISK, minval=0.001, maxval=0.10, step=0.001, tooltip="Distancia mínima SL como decimal del precio (ej. 0.005 para 0.5%).")
 maxDrawdownPct  = input.float(0.20, "Máx Drawdown Permitido %", group=G_RISK, minval=0.01, maxval=1, step=0.001, tooltip="Máximo drawdown porcentual permitido antes de detener nuevas operaciones.")
 tpMult          = input.float(3.0, "TP Mult ATR", group=G_RISK, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Take Profit")
-beMult          = input.float(1.5, "BE Mult ATR", group=G_RISK, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Break-Even")
+beMult          = input.float(2.5, "BE Mult ATR", group=G_RISK, minval=0.1, step=0.1, tooltip="Multiplicador ATR para Break-Even")
 tslMethod       = input.string(TSL_PRICE, "TSL Método", options=[TSL_PRICE, TSL_LOWEST, TSL_PERCENT], group=G_RISK, tooltip="Elige el método de cálculo del Trailing Stop Loss (TSL).")
 tslSource       = input.string("low", "TSL Fuente [ATR Precio]", options=["close", "low"], group=G_RISK, tooltip="Precio base (Close o Low) si usas 'ATR (desde Precio)'.")
 tslMult         = input.float(2.0, "TSL Mult ATR [Métodos ATR]", group=G_RISK, minval=0.1, step=0.1, tooltip="Multiplicador ATR para TSL.")
@@ -87,6 +87,8 @@ var bool  riskLimitReached    = false
 var int barsBelowShortEma     = 0
 var int barsAboveShortEma     = 0
 
+var bool crossunderShortEma = false
+var bool crossoverShortEmaGlobal = false
 // *** Cálculos de Indicadores ***
 float currentEma = ta.ema(close, emaLen)
 float htfEma = request.security(syminfo.tickerid, htf, ta.ema(close, emaLen)[1], lookahead=barmerge.lookahead_off)
@@ -137,6 +139,8 @@ bool isHighestCloseCond = close == highestCloseVal
 bool stayedAboveShortEma = barsAboveShortEma >= exitEmaBars
 bool volumeConfirmsPeak = not volConfirmExit or (useVolFilter and volPass)
 bool peakExitCond = isHighestCloseCond and stayedAboveShortEma and volumeConfirmsPeak
+
+crossunderShortEma := ta.crossunder(close, currentEma)
 
 // Actualizar capital peak y calcular drawdown
 if strategy.equity > capitalInitial // Solo actualizar si el capital actual es mayor
@@ -207,7 +211,7 @@ if strategy.position_size > 0
         tslUpdatedThisBar := true
 
 // *** CONDICIONES DE ENTRADA ***
-bool entryTrigger = (barsBelowShortEma >= retrBars) and not isBullish and slDist > 0 and volPass and lrPass and adxPass //and crossoverShortEma //
+bool entryTrigger = (close < htfEma) and crossoverShortEmaGlobal and slDist > 0 and volPass and lrPass and adxPass
 
 // *** LÓGICA DE ENTRADA ***
 bool qtyOk     = not na(finalPositionQty) and finalPositionQty >= minQty
@@ -256,17 +260,15 @@ if strategy.position_size > 0 and not na(stopLossPrice)
         string exitMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "{{strategy.order.comment}}" }' // Usa placeholder
         alert(exitMsg + "{{webhook=" + webhookUrl + "}}", alert.freq_once_per_bar_close)
 
-if strategy.position_size > 0 
-    if peakExitCond and not trlActive  // Salida por pico de precio
-        strategy.close(id='Compra', comment='Peak Exit')
-        if enableWebhookAlerts and webhookUrl != ""
-            string peakExitMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "Peak Exit" }'
-            alert(peakExitMsg + "{{webhook=" + webhookUrl + "}}", alert.freq_once_per_bar_close)
-    else if not crossoverBullish and isBullish // Salida por cambio de tendencia (solo se ejecuta si la primera no lo hizo)
-        strategy.close(id='Compra', comment='Trend Exit (HTF)')
-        if enableWebhookAlerts and webhookUrl != ""
-            string trendExitMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "Trend Exit HTF" }'
-            alert(trendExitMsg + "{{webhook=" + webhookUrl + "}}", alert.freq_once_per_bar_close)
+// *** CONDICIONES DE SALIDA ADICIONALES (no SL/TP/TSL) ***
+bool exitTrigger = (close > htfEma) and crossunderShortEma
+
+// *** EJECUTAR SALIDA ADICIONAL ***
+if strategy.position_size > 0 and exitTrigger
+    strategy.close(id='Compra', comment='HTF Above & Short EMA Crossunder Exit')
+    if enableWebhookAlerts and webhookUrl != ""
+        string customExitMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "Custom Exit" }'
+        alert(customExitMsg + "{{webhook=" + webhookUrl + "}}", alert.freq_once_per_bar_close)
 
 // *** VISUALIZACIÓN ***
 // Inputs Visuales y Depuración
