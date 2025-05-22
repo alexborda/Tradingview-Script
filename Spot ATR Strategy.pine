@@ -27,7 +27,7 @@ htf             = input.timeframe("240", "EMA Larga TF", group=G_STRAT, tooltip=
 useAdxFilter    = input.bool(true, "Usar ADX", group=G_STRAT, tooltip="Filtro ADX para entradas")
 adxLen          = input.int(14, "ADX Longitud", group=G_STRAT, minval=1, tooltip="Períodos para ADX")
 adxSmooth       = input.int(14, "ADX Suavizado", group=G_STRAT, minval=1, tooltip="Suavizado interno del ADX")
-adxUmbral= input.float(15.0, "ADX Umbral Base", group=G_STRAT, minval=0, tooltip="Nivel mínimo base ADX")
+adxUmbral       = input.float(15.0, "ADX Umbral Base", group=G_STRAT, minval=0, tooltip="Nivel mínimo base ADX")
 useVolFilter    = input.bool(true, "Usar Volumen", group=G_STRAT, tooltip="Filtro volumen para entradas")
 volLen          = input.int(20, "Vol MA Len", group=G_STRAT, minval=1, tooltip="Períodos EMA volumen")
 volFactor       = input.float(1.1, "Vol Factor Min", group=G_STRAT, minval=0, step=0.1, tooltip="Multiplicador EMA volumen")
@@ -89,6 +89,7 @@ var int barsAboveShortEma     = 0
 
 var bool crossunderShortEma = false
 var bool crossoverShortEmaGlobal = false
+var int lastClosedTradeIndex = -1
 // *** Cálculos de Indicadores ***
 float currentEma = ta.ema(close, emaLen)
 float htfEma = request.security(syminfo.tickerid, htf, ta.ema(close, emaLen)[1], lookahead=barmerge.lookahead_off)
@@ -181,6 +182,7 @@ bool beActivatedThisBar = false
 bool tslUpdatedThisBar = false
 
 if strategy.position_size > 0
+// --- Alertas de Salida Detalladas ---
     EntryPrice := strategy.position_avg_price
     
     takeProfitPrice := lib.calcTP(EntryPrice, atrCurrent, tpMult, 2, 5)
@@ -253,12 +255,13 @@ if entryTrigger and canEnterTrade
 if strategy.position_size > 0 and not na(stopLossPrice)
     float actualLimit = (not trlActive and isBullish) ? takeProfitPrice : na
     strategy.exit(id='Venta SL/TP', from_entry='Compra', stop=stopLossPrice, limit=actualLimit, comment_profit='TP Hit', comment_loss='SL/BE/TSL Hit')
-    // Webhook para strategy.exit (si se activa)
-    if enableWebhookAlerts and webhookUrl != ""
-        // Nota: El mensaje de alerta aquí es genérico, ya que no sabemos si fue SL o TP
-        // Podrías usar alertcondition separadas si necesitas diferenciar para el webhook
-        string exitMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "{{strategy.order.comment}}" }' // Usa placeholder
-        alert(exitMsg + "{{webhook=" + webhookUrl + "}}", alert.freq_once_per_bar_close)
+    if enableWebhookAlerts and webhookUrl != "" and strategy.position_size[1] > 0 and strategy.position_size == 0 // Verificar si se cerró una posición
+        if trlActive[1] // Si TSL estaba activo en la barra anterior
+            alert('Salida por Trailing Stop Loss' + "{{webhook=" + webhookUrl + "}}", freq=alert.freq_once_per_bar_close)
+        else if beActive[1] // Si BE estaba activo en la barra anterior (y TSL no)
+            alert('Salida por Break-Even' + "{{webhook=" + webhookUrl + "}}", freq=alert.freq_once_per_bar_close)
+        else // Si ni BE ni TSL estaban activos, es el SL inicial o TP
+            alert('Salida por Stop Loss Inicial (o TP)' + "{{webhook=" + webhookUrl + "}}", freq=alert.freq_once_per_bar_close)
 
 // *** CONDICIONES DE SALIDA ADICIONALES (no SL/TP/TSL) ***
 bool exitTrigger = (close > htfEma) and crossunderShortEma
@@ -267,8 +270,7 @@ bool exitTrigger = (close > htfEma) and crossunderShortEma
 if strategy.position_size > 0 and exitTrigger
     strategy.close(id='Compra', comment='HTF Above & Short EMA Crossunder Exit')
     if enableWebhookAlerts and webhookUrl != ""
-        string customExitMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "sell", "qty": ' + str.tostring(strategy.position_size) + ', "type": "market", "reason": "Custom Exit" }'
-        alert(customExitMsg + "{{webhook=" + webhookUrl + "}}", alert.freq_once_per_bar_close)
+        alert('Salida por Condición Personalizada (EMA Larga Arriba y Cruce Bajista EMA Corta)' + "{{webhook=" + webhookUrl + "}}", freq=alert.freq_once_per_bar_close)
 
 // *** VISUALIZACIÓN ***
 // Inputs Visuales y Depuración
