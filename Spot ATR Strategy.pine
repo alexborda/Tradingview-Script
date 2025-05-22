@@ -233,10 +233,10 @@ if entryTrigger and canEnterTrade
 
         if strategy.position_size[1] == 0
             stopLossPrice := initialSl
-            takeProfitPrice := na
+            //takeProfitPrice := na
             beActive := false
             trlActive := false
-            capitalInitial := capital
+            //capitalInitial := capital
 
         if enableWebhookAlerts and webhookUrl != "" and strategy.position_size[1] == 0
             string entryMsg = '{ "symbol": "' + syminfo.tickerid + '", "side": "buy", "qty": ' + str.tostring(finalPositionQty) + ', "type": "' + orderType + '"'
