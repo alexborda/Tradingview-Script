@@ -96,6 +96,7 @@ float htfEma = request.security(syminfo.tickerid, htf, ta.ema(close, emaLen)[1],
 bool isBullish = currentEma > htfEma
 bool crossoverBullish = ta.crossover(close, htfEma)
 bool crossoverShortEma = ta.crossover(close, currentEma)
+crossoverShortEmaGlobal := crossoverShortEma
 
 // ATR - Optimizado
 float trueRange    = ta.tr
@@ -254,7 +255,7 @@ if entryTrigger and canEnterTrade
 // *** CONDICIONES DE SALIDA ***
 if strategy.position_size > 0 and not na(stopLossPrice)
     float actualLimit = (not trlActive and isBullish) ? takeProfitPrice : na
-    strategy.exit(id='Venta SL/TP', from_entry='Compra', stop=stopLossPrice, limit=actualLimit, comment_profit='TP Hit', comment_loss='SL/BE/TSL Hit')
+    strategy.exit(id='Venta SL/BE/TSL', from_entry='Compra', stop=stopLossPrice, comment_loss='SL/BE/TSL Hit') // TP se maneja por separado
     if enableWebhookAlerts and webhookUrl != "" and strategy.position_size[1] > 0 and strategy.position_size == 0 // Verificar si se cerró una posición
         if trlActive[1] // Si TSL estaba activo en la barra anterior
             alert('Salida por Trailing Stop Loss' + "{{webhook=" + webhookUrl + "}}", freq=alert.freq_once_per_bar_close)
@@ -262,6 +263,16 @@ if strategy.position_size > 0 and not na(stopLossPrice)
             alert('Salida por Break-Even' + "{{webhook=" + webhookUrl + "}}", freq=alert.freq_once_per_bar_close)
         else // Si ni BE ni TSL estaban activos, es el SL inicial o TP
             alert('Salida por Stop Loss Inicial (o TP)' + "{{webhook=" + webhookUrl + "}}", freq=alert.freq_once_per_bar_close)
+
+    // Lógica de Salida por Trailing Stop Loss (solo si está por encima de EMA Larga)
+    // Esto reemplaza la gestión de TSL por strategy.exit
+    bool tslExitCond = strategy.position_size > 0 and trlActive and not na(stopLossPrice) and close < stopLossPrice and close > htfEma
+
+    if tslExitCond
+        strategy.close(id='Compra', comment='TSL Hit (Above HTF EMA)')
+        // Disparar alerta de TSL si está habilitada
+        if enableWebhookAlerts and webhookUrl != ""
+            alert('Salida por Trailing Stop Loss (EMA Larga Arriba)' + "{{webhook=" + webhookUrl + "}}", freq=alert.freq_once_per_bar_close)
 
 // *** CONDICIONES DE SALIDA ADICIONALES (no SL/TP/TSL) ***
 bool exitTrigger = (close > htfEma) and crossunderShortEma
