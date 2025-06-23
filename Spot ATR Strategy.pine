@@ -183,7 +183,6 @@ bool beActivatedThisBar = false
 bool tslUpdatedThisBar = false
 
 if strategy.position_size > 0
-// --- Alertas de Salida Detalladas ---
     EntryPrice := strategy.position_avg_price
     
     takeProfitPrice := lib.calcTP(EntryPrice, atrCurrent, tpMult, 2, 5)
@@ -299,17 +298,7 @@ if showDebugLabels
     var infoLabel = label.new(bar_index, na, "", color=color.rgb(75, 71, 71), style = label.style_label_left, textcolor=color.white, size=size.normal)
     label.set_xy(infoLabel, bar_index, high + (2 * atrCurrent))
     
-    string labelText = "---DEBUG INFO---\n" +
-     "close < htfEma: " + str.tostring(close < htfEma) + "\n" +
-     "crossoverShortEmaGlobal: " + str.tostring(crossoverShortEmaGlobal) + "\n" +
-     "slDist > 0: " + str.tostring(slDist > 0) + "\n" +
-     "volPass: " + str.tostring(volPass) + "\n" +
-     "lrPass: " + str.tostring(lrPass) + "\n" +
-     "adxPass: " + str.tostring(adxPass) + "\n" +
-     "entryTrigger: " + str.tostring(entryTrigger) + "\n" +
-     "canEnterTrade: " + str.tostring(canEnterTrade) + "\n" +
-     "finalQty: " + str.tostring(finalPositionQty)+ "\n" +
-     "drawdown: " + str.tostring(riskLimitReached)
+    string labelText = "---DEBUG INFO---\n" + "isBullish: " + str.tostring(isBullish) + "\n" + "crossoverShortEma: " + str.tostring(crossoverShortEma) + "\n" + "barsBelowShortEma: " + str.tostring(barsBelowShortEma) + "\n" + "adxPass: " + str.tostring(adxPass) + "\n" + "volPass: " + str.tostring(volPass) + "\n" + "entryTrigger: " + str.tostring(entryTrigger) + "\n" + "canEnterTrade: " + str.tostring(canEnterTrade) + "\n" + "finalQty: " + str.tostring(finalPositionQty)+ "\n" + "drawdown: " + str.tostring(riskLimitReached)
     
     label.set_text(infoLabel, labelText)
 
